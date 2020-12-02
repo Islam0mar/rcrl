@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.0.0)
 
 project(RCRL)
+set(CMAKE_VERBOSE_MAKEFILE ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 
 ####################################################################################################
 # global flags and directories setup
@@ -17,7 +20,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${OUTPUT_DIR})
 
 # latest c++ standards
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1y -fvisibility=hidden")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ggdb3 -O0 -std=c++17 -fvisibility=hidden")
 else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++latest")
 endif()
@@ -50,7 +53,7 @@ add_executable(host_app
 set_target_properties(host_app PROPERTIES ENABLE_EXPORTS ON)
 
 # add an include dir for ease of use
-target_include_directories(host_app PUBLIC src)
+target_include_directories(host_app PUBLIC src /usr/lib/llvm-10/include)
 
 # enable warnings
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -134,7 +137,7 @@ set_target_properties(tiny-process-library PROPERTIES FOLDER "third_party")
 
 # link host app to third party libs
 find_package(OpenGL REQUIRED)
-target_link_libraries(host_app PRIVATE imgui glfw ImGuiColorTextEdit tiny-process-library ${OPENGL_LIBRARIES})
+target_link_libraries(host_app PRIVATE imgui glfw ImGuiColorTextEdit tiny-process-library clang -L/usr/lib/llvm-10/lib/ ${OPENGL_LIBRARIES})
 
 ####################################################################################################
 # tests
