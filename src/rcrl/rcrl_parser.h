@@ -1,31 +1,68 @@
 #pragma once
 
-#include "rcrl.h"
+#include <clang-c/Index.h>
 
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <tuple>
 #include <vector>
 
-namespace rcrl
-{
-struct VariableDefinition
-{
-    std::string type;
-    std::string name;
-    std::string initializer;
-    bool        has_assignment = false;
-    bool        is_reference   = false;
+namespace rcrl {
+using std::string;
+
+struct Point {
+  unsigned int line;
+  unsigned int column;
 };
 
-struct Section
-{
-    size_t start_idx;
-    size_t line;
-    Mode   mode;
+struct CodeBlock {
+  Point start_pos;
+  Point end_pos;
+  CXCursor cursor;  // for any additional info.
 };
 
-// removes comments from the string and returns a list of parsed beginings of sections - one of the 3: global/vars/once
-std::vector<Section> parse_sections_and_remove_comments(std::string& out, Mode default_mode);
+inline string GetBaseNameFromSourceName(string str) {
+  return str.substr(0, str.find('.'));
+}
+inline string GetHeaderNameFromSourceName(string str) {
+  return str.substr(0, str.find('.')) + ".hpp";
+}
 
-// parses variables from code - for 'vars' sections
-std::vector<VariableDefinition> parse_vars(const std::string& text, size_t line_start = 1);
+class PluginParser {
+ public:
+  PluginParser(string file_name, std::vector<const char*> command_line_args =
+                                     std::vector<const char*>(0));
+  ~PluginParser();
+  void Reparse();
+  void GenerateSourceFile(string file_name, string prepend_str = "",
+                          string append_str = "");
+  void GenerateHeaderFile(string file_name);
+  string get_file_name();
+  std::vector<const char*> get_flags();
+  // runs ParseWithOtherFlags internally
+  void set_flags(std::vector<const char*> new_flags);
 
-} // namespace rcrl
+ private:
+  void Parse();
+  void ParseWithOtherFlags();
+  string ConsumeToLine(unsigned int line);
+  string ReadToOneOfCharacters(Point start, string chars);
+  void AppendRange(Point start, Point end);
+  void AppendCodeBlockWithoutNamespace(CodeBlock code);
+  void AppendValidCodeBlock(CodeBlock code);
+  void AppendOnceCodeBlock(CodeBlock code);
+  void CacheHeaderFile();
+
+  string str_;
+  std::stringstream file_content_;
+  std::vector<CodeBlock> code_blocks_;
+  std::vector<const char*> flags_;
+  std::vector<std::tuple<Point, Point, string>> name_space_end_;
+  std::tuple<CXIndex, CXTranslationUnit> ast_;
+  const string file_name_;
+  unsigned int code_gen_number_;
+};
+
+}  // namespace rcrl
