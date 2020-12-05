@@ -1,7 +1,7 @@
 #pragma once
 
-#include <filesystem>
-#include <future>
+#include <boost/asio.hpp>
+#include <boost/process.hpp>
 #include <string>
 #include <vector>
 
@@ -25,9 +25,10 @@ class Plugin {
  private:
   // global state
   std::vector<std::pair<string, void*>> plugins_;
-  std::filesystem::file_time_type out_err_file_last_modification_time_;
-  std::string compiler_output_;
-  std::future<int> future_;
+  string compiler_output_;
+  std::mutex compiler_output_mut_;
+  boost::asio::io_service ios_;
+  std::future<int> compiler_process_;
   bool last_compile_successful_ = false;
   PluginParser parser_;
 };

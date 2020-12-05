@@ -323,7 +323,7 @@ cout << vec.size() << endl;
         history.SetText(history_text + editor.GetText());
 
         // load the new plugin
-        auto output_from_loading = compiler.CopyAndLoadNewPlugin(true);
+        auto output_from_loading = compiler.CopyAndLoadNewPlugin(false);
         auto old_line_count = program_output.GetTotalLines();
         program_output.SetText(program_output.GetText() + output_from_loading);
         // TODO: used for auto-scroll but the cursor in the editor is removed

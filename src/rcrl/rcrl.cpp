@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
-#include <filesystem>
 #include <fstream>
 #include <future>
 #include <iostream>
@@ -17,6 +16,7 @@
 #include <vector>
 
 #include "config.h"
+#include "debug.hpp"
 #include "rcrl_parser.h"
 
 #ifdef _WIN32
@@ -41,36 +41,26 @@ typedef void* RCRL_Dynlib;
 
 #endif
 
-namespace fs = std::filesystem;
+namespace bp = boost::process;
 using std::cerr;
 using std::cout;
 using std::endl;
 using std::string;
 
 namespace rcrl {
-
-constexpr auto kOutputFileName = "out.txt";
-
 Plugin::Plugin(string file_base_name, std::vector<const char*> flags)
     : parser_(file_base_name + ".cpp", flags) {
   auto header = GetHeaderNameFromSourceName(parser_.get_file_name());
   std::ofstream f(header, std::fstream::trunc | std::fstream::out);
   f << "#pragma once\n";
   f.close();
-  fs::path output_file = fs::current_path() / kOutputFileName;
-  fs::directory_entry entry_output_file{output_file};
-  if (!entry_output_file.exists()) {
-    std::ofstream(output_file.c_str()).put('a');  // create file
-  }
-  out_err_file_last_modification_time_ = fs::last_write_time(output_file);
-  // change time to make iscomiling work
-  std::ofstream(output_file.c_str()).put('a');
 }
 
 string Plugin::get_new_compiler_output() {
-  auto val = compiler_output_;
+  std::lock_guard<std::mutex> lock(compiler_output_mut_);
+  auto str = compiler_output_;
   compiler_output_.clear();
-  return val;
+  return str;
 }
 
 string Plugin::CleanupPlugins(bool redirect_stdout) {
@@ -106,7 +96,7 @@ string Plugin::CleanupPlugins(bool redirect_stdout) {
 #endif  // _WIN32
 
   if (plugins_.size())
-    system((string(RCRL_System_Delete) + bin_folder + "lib" +
+    system((string(RCRL_System_Delete) + bin_folder +
             RCRL_PLUGIN_NAME "_*" RCRL_EXTENSION)
                .c_str());
   plugins_.clear();
@@ -129,39 +119,50 @@ bool Plugin::CompileCode(string code) {
   file << "#include \"" + header + "\"\n" << code;
   file.close();
   parser_.Reparse();
-  parser_.GenerateSourceFile(parser_.get_file_name(),
-                             "#include \"" + header + "\"\n");
+  parser_.GenerateSourceFile(parser_.get_file_name());
   // mark the successful compilation flag as false
   last_compile_successful_ = false;
-  future_ = std::async(std::launch::async, [&]() -> int {
-    fs::path output_file = fs::current_path() / kOutputFileName;
-    out_err_file_last_modification_time_ = fs::last_write_time(output_file);
-    auto cmd = string("cmake --build . --target " +
-                      GetBaseNameFromSourceName(parser_.get_file_name()) +
-                      " 1>" + string(kOutputFileName) + " 2>&1");
-    return system(cmd.c_str());
+
+  static std::vector<char> buf(1 << 12);
+  ios_.restart();
+  compiler_process_ = std::async(std::launch::async, [&]() {
+    bp::async_pipe ap(ios_);
+    auto output_buffer{boost::asio::buffer(buf)};
+    bp::child c("/usr/bin/ninja", "-v", (bp::std_err & bp::std_out) > ap,
+                bp::std_in.close());
+    auto OnStdout = [&](const boost::system::error_code& ec, std::size_t size) {
+      auto lambda_impl = [&](const boost::system::error_code& ec, std::size_t n,
+                             auto& lambda_ref) {
+        std::lock_guard<std::mutex> lock(compiler_output_mut_);
+        compiler_output_.reserve(compiler_output_.size() + n);
+        compiler_output_.insert(compiler_output_.end(), buf.begin(),
+                                buf.begin() + n);
+        if (!ec && ap.is_open()) {
+          boost::asio::async_read(ap, output_buffer,
+                                  std::bind(lambda_ref, std::placeholders::_1,
+                                            std::placeholders::_2, lambda_ref));
+        }
+      };
+      return lambda_impl(ec, size, lambda_impl);
+    };
+    boost::asio::async_read(ap, output_buffer, OnStdout);
+    ios_.run();
+    c.join();
+    return c.exit_code();
   });
   return true;
 }
 
 bool Plugin::IsCompiling() {
-  fs::path output_file = fs::current_path() / kOutputFileName;
-  return out_err_file_last_modification_time_ ==
-         fs::last_write_time(output_file);
+  return compiler_process_.valid() && !ios_.stopped();
 }
 
 bool Plugin::TryGetExitStatusFromCompile(int& exit_code) {
-  if (future_.valid() && !IsCompiling()) {
-    // int result = compiler_process->exit_code();
-    // std::cout << "Signaled with sginal #" << result << ", aka "
-    //           << strsignal(result) << endl;
-
-    exit_code = future_.get();
-    // append compiler out and error
-    std::ifstream f(kOutputFileName);
-    std::stringstream ss;
-    ss << f.rdbuf();
-    compiler_output_.append(ss.str());
+  if (compiler_process_.valid() && !IsCompiling()) {
+    compiler_output_.append("\nSignaled with sginal #" +
+                            std::to_string(exit_code) + ", aka " +
+                            strsignal(exit_code) + "\n");
+    exit_code = compiler_process_.get();
     if ((last_compile_successful_ = exit_code == 0)) {
       auto header = GetHeaderNameFromSourceName(parser_.get_file_name());
       parser_.GenerateHeaderFile(header);
@@ -177,16 +178,14 @@ string Plugin::CopyAndLoadNewPlugin(bool redirect_stdout) {
   last_compile_successful_ =
       false;  // shouldn't call this function twice in a
               // row without compiling anything in between
+
   // copy the plugin
-  auto name_copied = string(RCRL_BIN_FOLDER) + "lib" + RCRL_PLUGIN_NAME "_" +
+  auto name_copied = string(RCRL_BIN_FOLDER) + RCRL_PLUGIN_NAME "_" +
                      std::to_string(plugins_.size()) + RCRL_EXTENSION;
   const auto copy_res = RCRL_CopyDynlib(
-      (string(RCRL_BIN_FOLDER) + "lib" + RCRL_PLUGIN_NAME RCRL_EXTENSION)
-          .c_str(),
+      (string(RCRL_BIN_FOLDER) + RCRL_PLUGIN_NAME RCRL_EXTENSION).c_str(),
       name_copied.c_str());
-  std::cout << name_copied << "\n";
   assert(copy_res);
-
   if (redirect_stdout)
     freopen(RCRL_BUILD_FOLDER "/rcrl_stdout.txt", "w", stdout);
 
@@ -196,6 +195,7 @@ string Plugin::CopyAndLoadNewPlugin(bool redirect_stdout) {
     fprintf(stderr, "%s\n", dlerror());
     exit(EXIT_FAILURE);
   }
+
   assert(plugin);
 
   // add the plugin to the list of loaded ones - for later unloading
