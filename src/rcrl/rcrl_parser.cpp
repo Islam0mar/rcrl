@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -12,9 +11,6 @@
 #include <vector>
 
 #include "config.h"
-#include "debug.hpp"
-
-namespace fs = std::filesystem;
 
 using std::cerr;
 using std::cout;
@@ -28,7 +24,6 @@ std::ostream& operator<<(std::ostream& stream, const CXString& str) {
   clang_disposeString(str);
   return stream;
 }
-bool operator==(const Point& p1, const Point& p2) { return p1.line == p2.line; }
 bool operator<(const Point& p1, const Point& p2) {
   return p1.line < p2.line || (p1.line == p2.line && p1.column < p2.column);
 }
@@ -37,11 +32,6 @@ std::ostream& operator<<(std::ostream& out, const Point& p) {
 }
 std::ostream& operator<<(std::ostream& out, const CodeBlock& p) {
   return out << p.start_pos.line << ":" << p.start_pos.column;
-}
-
-constexpr auto kCursorInvalidCodeBlock = CXCursor_ObjCNSObject;
-static inline bool IsOnceCodeBlock(CXCursor c) {
-  return c.kind == kCursorInvalidCodeBlock;
 }
 
 auto AstVisitor(CXCursor c, CXCursor parent, CXClientData code_blocks_ptr) {
@@ -59,8 +49,14 @@ auto AstVisitor(CXCursor c, CXCursor parent, CXClientData code_blocks_ptr) {
     if (clang_getCursorKind(c) == CXCursor_InclusionDirective) {
       clang_getExpansionLocation(clang_getCursorLocation(c), nullptr, &lin,
                                  &col, nullptr);
+      clang_getExpansionLocation(clang_getRangeStart(clang_getCursorExtent(c)),
+                                 nullptr, &lin, &col, nullptr);
       code.start_pos.column = col;
       code.start_pos.line = lin;
+      clang_getExpansionLocation(clang_getRangeEnd(clang_getCursorExtent(c)),
+                                 nullptr, &lin, &col, nullptr);
+      code.end_pos.column = col;
+      code.end_pos.line = lin;
       code.cursor = c;
       code_blocks.emplace_back(code);
     } else if (clang_isDeclaration(clang_getCursorKind(c)) != 0 &&
@@ -98,71 +94,23 @@ auto AstVisitor(CXCursor c, CXCursor parent, CXClientData code_blocks_ptr) {
   }
   return return_val;
 }
+
 void GenerateCodeBlocksFromAst(CXTranslationUnit ast,
                                std::vector<CodeBlock>* code_blocks_ptr) {
   CXCursor cursor = clang_getTranslationUnitCursor(ast);
   clang_visitChildren(cursor, AstVisitor, code_blocks_ptr);
-  for (unsigned I = 0, N = clang_getNumDiagnostics(ast); I != N; ++I) {
-    CXDiagnostic diag = clang_getDiagnostic(ast, I);
-    // clang_diagnostic
-    // TODO: error: C++ requires a type specifier for all declarations
-    unsigned int lin, prev_lin = 0;
-    CXFile f;
-    CodeBlock code;
-    auto loc = clang_getDiagnosticLocation(diag);
-    clang_getExpansionLocation(loc, &f, &lin, nullptr, nullptr);
-    if (lin != prev_lin &&
-        std::find_if(code_blocks_ptr->begin(), code_blocks_ptr->end(),
-                     [&](const CodeBlock c) {
-                       return lin == c.start_pos.line;
-                     }) == code_blocks_ptr->end()) {
-      code.start_pos.column = 1;
-      code.start_pos.line = lin;
-      code.cursor = clang_getCursor(ast, loc);
-      code.cursor.kind = kCursorInvalidCodeBlock;
-      code_blocks_ptr->emplace_back(code);
-      auto str = clang_getDiagnosticSpelling(diag);
-      DEBUG(lin, clang_getCString(str));
-      clang_disposeString(str);
-    }
-    prev_lin = lin;
-  }
-}
-
-void CreateCmakeListsFile(string file_name, std::vector<const char*> flags_v) {
-  // generate Tupfile
-  string flags;
-  for (auto arg : flags_v) {
-    flags += arg;
-    flags += " ";
-  }
-  std::ofstream f("CMakeLists.txt", std::fstream::out | std::fstream::trunc);
-  f << "cmake_minimum_required(VERSION 3.16)\n"
-    << "set(CMAKE_CXX_COMPILER clang++)\n"
-    << "project(" << GetBaseNameFromSourceName(file_name) << " CXX)\n"
-    << "set(CMAKE_VERBOSE_MAKEFILE ON)\n"
-    << "add_library(${PROJECT_NAME}  SHARED " << file_name << " "
-    << GetHeaderNameFromSourceName(file_name) << ")\n"
-    << "target_compile_options(" << GetBaseNameFromSourceName(file_name)
-    << " PUBLIC -fvisibility=hidden " << flags << ")\n"
-    << "add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD "
-       "COMMAND cp compound.o old.o\n"
-       "COMMAND ld -r ./CMakeFiles/plugin.dir/${PROJECT_NAME}.cpp.o old.o -o "
-       "compound.o\n"
-       "COMMAND cp compound.o old.o\n"
-       "COMMAND cp compound.o ./CMakeFiles/plugin.dir/${PROJECT_NAME}.cpp.o)\n";
-  // "add_dependencies(${PROJECT_NAME} copy)\n";
-  f.close();
-  std::cout << system("echo \"\">compound.o");
-  std::cout << system("cmake -GNinja  .");
 }
 
 void PluginParser::Parse() {
   std::ifstream file(file_name_, std::fstream::in);
-  file_content_.str(std::string());
-  name_space_end_.clear();
-  file_content_ << file.rdbuf();
+  string line;
+  file_content_.clear();
+  while (std::getline(file, line)) {
+    file_content_.emplace_back(line + "\n");
+  }
+  file.close();
   code_blocks_.clear();
+  name_space_end_.clear();
   CXIndex index = clang_createIndex(0, 0);
   CXTranslationUnit ast = clang_parseTranslationUnit(
       index, file_name_.c_str(), flags_.data(), flags_.size(), nullptr, 0,
@@ -173,15 +121,17 @@ void PluginParser::Parse() {
           CXTranslationUnit_IncludeAttributedTypes);
   GenerateCodeBlocksFromAst(ast, &code_blocks_);
   ast_ = std::make_tuple(index, ast);
-  // generate Tupfile
-  CreateCmakeListsFile(file_name_, flags_);
 }
 
 void PluginParser::ParseWithOtherFlags() {
   std::ifstream file(file_name_, std::fstream::in);
-  file_content_.str(std::string());
+  string line;
+  file_content_.clear();
+  while (std::getline(file, line)) {
+    file_content_.emplace_back(line + "\n");
+  }
+  file.close();
   name_space_end_.clear();
-  file_content_ << file.rdbuf();
   code_blocks_.clear();
   auto [i, tu] = ast_;
   clang_disposeTranslationUnit(tu);
@@ -194,14 +144,17 @@ void PluginParser::ParseWithOtherFlags() {
           CXTranslationUnit_IncludeAttributedTypes);
   GenerateCodeBlocksFromAst(ast, &code_blocks_);
   ast_ = std::make_tuple(i, ast);
-  CreateCmakeListsFile(file_name_, flags_);
 }
 
 void PluginParser::Reparse() {
   std::ifstream file(file_name_, std::fstream::in);
-  file_content_.str(std::string());
+  string line;
+  file_content_.clear();
+  while (std::getline(file, line)) {
+    file_content_.emplace_back(line + "\n");
+  }
+  file.close();
   name_space_end_.clear();
-  file_content_ << file.rdbuf();
   code_blocks_.clear();
   auto ast = std::get<1>(ast_);
   clang_reparseTranslationUnit(ast, 0, 0, CXReparse_None);
@@ -209,7 +162,14 @@ void PluginParser::Reparse() {
 }
 
 PluginParser::PluginParser(string file_name, std::vector<const char*> flags)
-    : str_(""), flags_(flags), file_name_(file_name), code_gen_number_(0) {
+    : generated_file_content_(""),
+      flags_(flags),
+      file_name_(file_name),
+      code_gen_number_(0) {
+  // create empty file
+  std::ofstream file(file_name_, std::fstream::out | std::fstream::trunc);
+  file << "\n";
+  file.close();
   Parse();
 }
 
@@ -226,67 +186,44 @@ void PluginParser::set_flags(std::vector<const char*> f) {
   ParseWithOtherFlags();
 }
 
-string PluginParser::ConsumeToLine(unsigned int line) {
-  unsigned int x = 0;
-  std::istringstream ss;
-  ss.str(file_content_.str());
-  string s;
-  while (line > x && std::getline(ss, s)) {
-    x++;
-  }
-  return s;
-}
 string PluginParser::ReadToOneOfCharacters(Point start, string chars) {
-  unsigned int x = 0;
-  std::istringstream ss;
-  ss.str(file_content_.str());
-  string str;
-  if (!(start == Point{0, 0})) {
-    while (start.line > x++ && std::getline(ss, str)) {
-    }
-    char c;
-    str.push_back('\n');
-    auto i = std::find_if(str.begin(), str.end(), [&](const char c) {
-      return chars.find(c) != chars.npos;
-    });
-    if (i != str.end()) {
-      str = str.substr(start.column - 1, i - str.begin() - start.column + 1);
+  auto i = start.line - 1;
+  auto j = start.column - 1;
+  auto n = file_content_.size();
+  auto result = string("");
+  auto line = file_content_[i].substr(j);
+  bool not_found = true;
+  for (; not_found && i < n; j = 0, i++) {
+    if (j == 0) {
+      line = file_content_[i];
     } else {
-      while (ss.get(c)) {
-        if (chars.find(c) != chars.npos) {
-          break;
-        }
-        str.push_back(c);
-      }
+      j = 0;
     }
+    do {
+      not_found = (chars.find(line[j++]) == chars.npos);
+    } while (not_found && j < line.size());
+    result += not_found && j > 0 ? line : line.substr(0, j - 1);
   }
-  return str;
+  return result;
 }
+// end point shouldn't be taken
 void PluginParser::AppendRange(Point start, Point end) {
-  auto line = start.line;
-  auto str = ConsumeToLine(line);
   if (start < end) {
-    if (line == end.line) {
-      if (end.column > 0) {
-        str_.append(
-            str.substr(start.column - 1, end.column - start.column + 1));
-        str_.push_back('\n');
-      }
+    if (start.line == end.line) {
+      generated_file_content_.append(file_content_[start.line - 1].substr(
+          start.column - 1, end.column - 1));
     } else {
-      str_.append(str.substr(start.column - 1));
-      str_.push_back('\n');
-      for (++line; line < end.line; line++) {
-        str_.append(ConsumeToLine(line));
-        str_.push_back('\n');
+      while (start.line < end.line) {
+        generated_file_content_.append(file_content_[start.line - 1]);
+        start.line++;
       }
-      str = ConsumeToLine(end.line);
-      str_.append(str.substr(0, end.column + 1));
-      str_.push_back('\n');
+      generated_file_content_.append(
+          file_content_[end.line - 1].substr(0, end.column - 1));
     }
   }
 }
 
-void PluginParser::AppendCodeBlockWithoutNamespace(CodeBlock code) {
+void PluginParser::AppendValidCodeBlockWithoutNamespace(CodeBlock code) {
   switch (clang_getCursorKind(code.cursor)) {
     case CXCursor_Namespace: {
       auto str = ReadToOneOfCharacters(code.start_pos, "{") + "{\n";
@@ -294,101 +231,116 @@ void PluginParser::AppendCodeBlockWithoutNamespace(CodeBlock code) {
           std::make_tuple(code.start_pos, code.end_pos, str));
       break;
     }
-    case CXCursor_InclusionDirective: {
-      str_.append(ReadToOneOfCharacters(code.start_pos, "\n") + "\n");
-      break;
-    }
     default: {
-      // once declarations
-      if (IsOnceCodeBlock(code.cursor)) {
-        str_.append(ReadToOneOfCharacters(code.start_pos, ";") + ";\n");
-      } else {
-        // global and variable declarations
-        AppendRange(code.start_pos, code.end_pos);
-      }
+      // global and variable declarations
+      AppendRange(code.start_pos, code.end_pos);
       break;
     }
   }
+  if (clang_getCursorKind(code.cursor) != CXCursor_InclusionDirective) {
+    generated_file_content_.append(";\n");
+  } else {
+    generated_file_content_.append("\n");
+  }
 }
+
 void PluginParser::AppendValidCodeBlock(CodeBlock code) {
   int i = 0;
   for (const auto& [start, end, str] : name_space_end_) {
     if (start < code.start_pos && code.end_pos < end) {
-      str_.append(str);
+      generated_file_content_.append(str);
       i++;
     }
   }
-  AppendCodeBlockWithoutNamespace(code);
+  AppendValidCodeBlockWithoutNamespace(code);
   for (int j = 0; j < i; ++j) {
-    str_.append("}\n");
+    generated_file_content_.append("}\n");
   }
 }
 
-void PluginParser::AppendOnceCodeBlock(CodeBlock code) {
-  int i = 0;
-  // once can't be repeated in the same line
-  for (const auto& [start, end, str] : name_space_end_) {
-    if (start < code.start_pos && code.end_pos < end) {
-      str_.append(str);
-      i++;
+void PluginParser::AppendOnceCodeBlocks() {
+  std::sort(code_blocks_.begin(), code_blocks_.end(),
+            [](const CodeBlock& a, const CodeBlock& b) {
+              return a.start_pos < b.start_pos;
+            });
+  Point p = {1, 1};
+  auto line = p.line;
+  auto column = p.column;
+  // append every unparsed piece of text to once function.
+  for (auto c : code_blocks_) {
+    while (line < c.start_pos.line) {
+      generated_file_content_.append(
+          file_content_[line - 1].substr(column - 1));
+      line++;
+      column = 1;
+    }
+    generated_file_content_.append(
+        file_content_[line - 1].substr(column - 1, c.start_pos.column - 1));
+    if (clang_getCursorKind(c.cursor) != CXCursor_Namespace) {
+      line = c.end_pos.line;
+      column = c.end_pos.column;
+    } else {
+      // skip to '{'
+      auto namespace_begin = ReadToOneOfCharacters(c.start_pos, "{") + "{";
+      line += std::count(namespace_begin.begin(), namespace_begin.end(), '\n');
+      column = file_content_[line].find("{") + 1;
+      generated_file_content_.append(namespace_begin + "\n");
+      // closing '}' will be appended by the above procedure
     }
   }
-  AppendCodeBlockWithoutNamespace(code);
-  for (int j = 0; j < i; ++j) {
-    str_.append("}\n");
+  while (line < file_content_.size()) {
+    generated_file_content_.append(file_content_[line - 1].substr(column - 1));
+    line++;
+    column = 1;
   }
+  generated_file_content_.append(file_content_[line - 1].substr(column - 1));
 }
 
 void PluginParser::GenerateSourceFile(string file_name, string prepend_str,
                                       string append_str) {
   std::vector<unsigned int> lines;
-  DEBUG(code_blocks_, 1);
-  str_ = "";
-  str_ += prepend_str;
+  generated_file_content_ = "";
+  generated_file_content_ += prepend_str;
 
   for (const auto& code : code_blocks_) {
-    if (!IsOnceCodeBlock(code.cursor)) {
-      auto kind = clang_getCursorKind(code.cursor);
-      if (kind == CXCursor_UsingDirective ||
-          kind == CXCursor_FunctionTemplate ||
-          kind == CXCursor_InclusionDirective) {
-        AppendValidCodeBlock(code);
-      } else {
-        str_ += __STR(RCRL_EXPORT_API) + string(" ");
-        auto i = str_.size();
-        AppendValidCodeBlock(code);
-        if (str_.find(" auto ", i) < str_.find("{", i)) {
-          CXString c_str = clang_getTypeSpelling(
+    auto kind = clang_getCursorKind(code.cursor);
+    if (kind == CXCursor_UsingDirective || kind == CXCursor_FunctionTemplate ||
+        kind == CXCursor_InclusionDirective) {
+      AppendValidCodeBlock(code);
+    } else {
+      // variable/functions declarations
+      // TODO: extract function parameter intializers.
+      generated_file_content_ += __STR(RCRL_EXPORT_API) + string(" ");
+      auto i = generated_file_content_.size() - 1;
+      AppendValidCodeBlock(code);
+      auto j = generated_file_content_.find(" auto ", i);
+      if (j != std::string::npos && j < generated_file_content_.find("{", i)) {
+        CXString c_str;
+        if (clang_getCursorKind(code.cursor) == CXCursor_VarDecl) {
+          c_str = clang_getTypeSpelling((clang_getCursorType(code.cursor)));
+        } else {
+          // func decl
+          c_str = clang_getTypeSpelling(
               clang_getResultType(clang_getCursorType(code.cursor)));
-          string return_type = clang_getCString(c_str);
-          clang_disposeString(c_str);
-          str_.replace(str_.find(" auto"), 5, return_type);
         }
+        string return_type = clang_getCString(c_str);
+        clang_disposeString(c_str);
+        generated_file_content_.replace(
+            generated_file_content_.find(" auto", i), 5, return_type);
       }
     }
   }
-  str_ += "int __rcrl_internal_once_" + std::to_string(code_gen_number_++) +
-          " = [](){\n";
-  for (const auto& code : code_blocks_) {
-    if (std::find(lines.begin(), lines.end(), code.start_pos.line) ==
-        lines.end()) {
-      if (IsOnceCodeBlock(code.cursor)) {
-        auto str = ReadToOneOfCharacters(code.start_pos, ";") + ";\n";
-        str_.append(str);
-      }
-    }
-    lines.emplace_back(code.start_pos.line);
-  }
-  str_ += "  return 0;}();\n";
-  str_ += append_str;
-  auto old_str = str_;
-  CacheHeaderFile();
+  generated_file_content_ += "\nint __rcrl_internal_once_" +
+                             std::to_string(code_gen_number_++) + " = [](){\n";
+  AppendOnceCodeBlocks();
+  generated_file_content_ += "  return 0;}();\n";
+  generated_file_content_ += append_str;
   std::ofstream file(file_name, std::fstream::out | std::fstream::trunc);
-  file << old_str;
+  file << generated_file_content_;
 }
 
-void PluginParser::CacheHeaderFile() {
-  str_ = "";
+void PluginParser::GenerateHeaderFile(string file_name) {
+  generated_file_content_ = "";
   for (const auto& code : code_blocks_) {
     switch (clang_getCursorKind(code.cursor)) {
       case CXCursor_FunctionTemplate:
@@ -401,38 +353,43 @@ void PluginParser::CacheHeaderFile() {
         auto str = ReadToOneOfCharacters(code.start_pos, "\n") + "\n";
         auto header = GetHeaderNameFromSourceName(file_name_);
         if (str.find(header) == std::string::npos) {
-          str_.append(str);
+          generated_file_content_.append(str);
         }
         break;
       }
       default: {
-        if (!IsOnceCodeBlock(code.cursor)) {
-          // add space to void matching auto substring
-          auto str = __STR(RCRL_IMPORT_API) + string(" ") +
-                     ReadToOneOfCharacters(code.start_pos, "{=(") + ";\n";
-          if (str.find(" auto ") != std::string::npos) {
-            CXString c_str =
-                clang_getTypeSpelling(clang_getCursorType(code.cursor));
-            string variable_type = clang_getCString(c_str);
-            clang_disposeString(c_str);
-            auto gen_sym = "_" + std::to_string(code_gen_number_++) + "_t";
-            variable_type = string("using ") + gen_sym + string(" = ") +
-                            variable_type + string(";\nextern " + gen_sym);
-            str.replace(str.find(" auto"), 5, variable_type);
-          } else {
-            str = "extern " + str;
-          }
-          str_.append(str);
-          break;
+        // add space to avoid matching auto substring
+        auto str = string(" ");
+        CXString c_str;
+        if (clang_getCursorKind(code.cursor) == CXCursor_VarDecl) {
+          c_str = clang_getTypeSpelling((clang_getCursorType(code.cursor)));
+          str += ReadToOneOfCharacters(code.start_pos, "{=(;") + ";\n";
+        } else {
+          // func decl
+          c_str = clang_getTypeSpelling(
+              clang_getResultType(clang_getCursorType(code.cursor)));
+          // TODO: support function argument intializers;
+          str += ReadToOneOfCharacters(code.start_pos, "{") + ";\n";
         }
+        string variable_type = clang_getCString(c_str);
+        clang_disposeString(c_str);
+        auto tmp = str.find(" auto ");
+        if (tmp != std::string::npos && tmp < str.find('{')) {
+          auto gen_sym = "_" + std::to_string(code_gen_number_++) + "_t";
+          variable_type = string("using ") + gen_sym + string(" = ") +
+                          variable_type +
+                          string(";\n" RCRL_IMPORT_API " extern " + gen_sym);
+          str.replace(str.find(" auto"), 5, variable_type);
+        } else {
+          str = RCRL_IMPORT_API " extern " + str;
+        }
+        generated_file_content_.append(str);
+        break;
       }
     }
   }
-}
-
-void PluginParser::GenerateHeaderFile(string file_name) {
   std::ofstream file(file_name, std::fstream::out | std::fstream::app);
-  file << str_;
+  file << generated_file_content_;
 }
 
 }  // namespace rcrl

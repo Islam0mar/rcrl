@@ -50,13 +50,12 @@ class PluginParser {
   string ConsumeToLine(unsigned int line);
   string ReadToOneOfCharacters(Point start, string chars);
   void AppendRange(Point start, Point end);
-  void AppendCodeBlockWithoutNamespace(CodeBlock code);
+  void AppendValidCodeBlockWithoutNamespace(CodeBlock code);
   void AppendValidCodeBlock(CodeBlock code);
-  void AppendOnceCodeBlock(CodeBlock code);
-  void CacheHeaderFile();
+  void AppendOnceCodeBlocks();
 
-  string str_;
-  std::stringstream file_content_;
+  string generated_file_content_;
+  std::vector<string> file_content_;
   std::vector<CodeBlock> code_blocks_;
   std::vector<const char*> flags_;
   std::vector<std::tuple<Point, Point, string>> name_space_end_;
