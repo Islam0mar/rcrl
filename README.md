@@ -66,4 +66,5 @@ The repository makes use of a few third party libraries and they are setup as su
 ## Copyright
 
 Copyright (c) 2018 Viktor Kirilov
+
 Copyright (c) 2020 Islam Omar (io1131@fayoum.edu.eg)
