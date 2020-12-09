@@ -38,6 +38,15 @@ The repository makes use of a few third party libraries and they are setup as su
 - ```cmake --build .``` - compiles the project
 - the resulting binary is ```host_app``` in ```bin``` of the build folder
 
+## Recipe 
+
+- Text input is feed to clang.
+- Traverse the parsed code for functions & variables definition "ignore errors".
+- Add export prefix for them and put them in plugin.cpp.
+- Every non-parsed text would be regarded as once in plugin.cpp.
+- Append plugin.hpp with functions prototypes and extern variables.
+- Load library with `RTLD_GLOBAL`, so variables can be reused.
+
 ## TODO
 
 - [x] use libclang
