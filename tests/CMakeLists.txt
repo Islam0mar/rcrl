@@ -20,7 +20,7 @@ if(${CMAKE_GENERATOR} MATCHES "Visual Studio" OR ${CMAKE_GENERATOR} MATCHES "Xco
 endif()
 # link to clang
 target_link_libraries(rcrl_compiler_tests PRIVATE ${LIBCLANG_LIBRARIES})
-target_compile_options(rcrl_compiler_tests  PRIVATE ${LIBCLANG_CXXFLAGS})
+target_compile_options(rcrl_compiler_tests  PRIVATE ${__LIST})
 
 # link to dl for dlopen() and dlclose()
 if(UNIX AND NOT APPLE)

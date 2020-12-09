@@ -97,7 +97,8 @@ find_package(Boost REQUIRED COMPONENTS filesystem)
 set (CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package (LibClang REQUIRED)
 target_include_directories(host_app PRIVATE ${Boost_INCLUDE_DIR})
-target_compile_options(host_app  PRIVATE ${LIBCLANG_CXXFLAGS})
+string(REPLACE " " ";" __LIST ${LIBCLANG_CXXFLAGS})
+target_compile_options(host_app PRIVATE ${__LIST})
 target_link_libraries(host_app PRIVATE imgui glfw ImGuiColorTextEdit
   ${Boost_LIBRARIES}
   ${LIBCLANG_LIBRARIES}
