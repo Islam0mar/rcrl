@@ -49,6 +49,7 @@ The repository makes use of a few third party libraries and they are setup as su
 
 ## TODO
 
+- [ ] resolve license: GNU General Public License
 - [x] use libclang
 - [x] replace tiny process with boost process
 - [ ] rewrite test cases
@@ -60,3 +61,9 @@ The repository makes use of a few third party libraries and they are setup as su
 - [ ] add timeout for compilation
 - [ ] add option to add link flags
 - [ ] maybe use [zapcc](https://github.com/yrnkrn/zapcc) for better a compilation time
+
+
+## Copyright
+
+Copyright (c) 2018 Viktor Kirilov
+Copyright (c) 2020 Islam Omar (io1131@fayoum.edu.eg)
