@@ -9,9 +9,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # global flags and directories setup
 ####################################################################################################
 
-# precompiled header macro - taken (and slightly modified - removed "-std=..." stuff) from here: https://github.com/iboB/cmake-pch
-include(src/third_party/precompiled_header.cmake)
-
 # directories - everything goes in the same place
 set(OUTPUT_DIR ${PROJECT_BINARY_DIR}/bin/)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${OUTPUT_DIR})
@@ -24,11 +21,6 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++latest")
 endif()
-
-# the file that will 
-set(plugin_file ${PROJECT_BINARY_DIR}/plugin.cpp)
-# touch the file so it exists
-file(WRITE ${plugin_file} "")
 
 ####################################################################################################
 # the main executable
@@ -44,16 +36,13 @@ add_executable(host_app
     src/rcrl/rcrl.cpp
     src/rcrl/rcrl_parser.h
     src/rcrl/rcrl_parser.cpp
-    src/rcrl/rcrl_for_plugin.h
 # imgui integration
     src/third_party/imgui/examples/opengl2_example/imgui_impl_glfw_gl2.cpp
 )
 
-# enable exports so the plugin can link to the executable
-set_target_properties(host_app PROPERTIES ENABLE_EXPORTS ON)
 
 # add an include dir for ease of use
-target_include_directories(host_app PUBLIC src /usr/lib/llvm-10/include)
+target_include_directories(host_app PUBLIC src)
 
 # enable warnings
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -78,36 +67,6 @@ target_compile_definitions(host_app PRIVATE "CMAKE_SOURCE_DIR=\"${CMAKE_SOURCE_D
 target_compile_definitions(host_app PRIVATE "HOST_APP")
 
 ####################################################################################################
-# the plugin that will be used for RCRL
-####################################################################################################
-
-# the plugin target that will be recompiled and loaded by RCRL
-add_library(plugin SHARED EXCLUDE_FROM_ALL ${plugin_file} src/precompiled_for_plugin.cpp)
-# link the RCRL plugin with the host app so we can call stuff from it
-target_link_libraries(plugin host_app)
-# exclude it even for Visual Studio when building the whole solution (EXCLUDE_FROM_ALL is not enough)
-set_target_properties(plugin PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD 1)
-# no 'lib' prefix for some compilers/platforms - simplifies my code
-set_target_properties(plugin PROPERTIES PREFIX "")
-if(APPLE)
-    # weird flags to make it link to the executable - see this: https://stackoverflow.com/questions/48176641
-    set_target_properties(plugin PROPERTIES LINK_FLAGS "-undefined dynamic_lookup")
-elseif(UNIX)
-    # add -fPIC - on some architectures under linux the precompiled header for the plugin target couldn't be used
-    target_compile_options(plugin PRIVATE -fPIC)
-elseif(MSVC)
-    # we don't want .pdb files for the plugin because when we are within Visual Studio and debugging the application it locks
-    # the .pdb for the original .dll and subsequent compiles fail even though we have loaded copies of the original .dll
-    # can also use /PDBALTPATH - https://blog.molecular-matters.com/2014/05/10/using-runtime-compiled-c-code-as-a-scripting-language-under-the-hood/
-    set_target_properties(plugin PROPERTIES LINK_FLAGS /DEBUG:NONE)
-endif()
-
-# add a precompiled header but not for MacOS
-if(NOT APPLE)
-    add_precompiled_header(plugin ${CMAKE_CURRENT_SOURCE_DIR}/src/precompiled_for_plugin.h ${CMAKE_CURRENT_SOURCE_DIR}/src/precompiled_for_plugin.cpp)
-endif()
-
-####################################################################################################
 # third party libs
 ####################################################################################################
 
@@ -126,18 +85,23 @@ set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_INSTALL        OFF CACHE BOOL "" FORCE)
 add_subdirectory(src/third_party/glfw)
 
-# tiny-process-library
-add_subdirectory(src/third_party/tiny-process-library)
-
 # folders for the third party libs
 set_target_properties(glfw PROPERTIES FOLDER "third_party")
 set_target_properties(imgui PROPERTIES FOLDER "third_party")
 set_target_properties(ImGuiColorTextEdit PROPERTIES FOLDER "third_party")
-set_target_properties(tiny-process-library PROPERTIES FOLDER "third_party")
 
 # link host app to third party libs
+set(OpenGL_GL_PREFERENCE GLVND)
 find_package(OpenGL REQUIRED)
-target_link_libraries(host_app PRIVATE imgui glfw ImGuiColorTextEdit tiny-process-library clang -L/usr/lib/llvm-10/lib/ ${OPENGL_LIBRARIES})
+find_package(Boost REQUIRED COMPONENTS filesystem)
+set (CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+find_package (LibClang REQUIRED)
+target_include_directories(host_app PRIVATE ${Boost_INCLUDE_DIR})
+target_compile_options(host_app  PRIVATE ${LIBCLANG_CXXFLAGS})
+target_link_libraries(host_app PRIVATE imgui glfw ImGuiColorTextEdit
+  ${Boost_LIBRARIES}
+  ${LIBCLANG_LIBRARIES}
+  ${OPENGL_LIBRARIES})
 
 ####################################################################################################
 # tests

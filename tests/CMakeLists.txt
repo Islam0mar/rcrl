@@ -18,11 +18,13 @@ target_compile_definitions(rcrl_compiler_tests PRIVATE "RCRL_EXTENSION=\"${CMAKE
 if(${CMAKE_GENERATOR} MATCHES "Visual Studio" OR ${CMAKE_GENERATOR} MATCHES "Xcode")
 	target_compile_definitions(rcrl_compiler_tests PRIVATE "RCRL_CONFIG=\"$<CONFIG>\"")
 endif()
-# link to process library
-target_link_libraries(rcrl_compiler_tests PRIVATE tiny-process-library)
+# link to clang
+target_link_libraries(rcrl_compiler_tests PRIVATE ${LIBCLANG_LIBRARIES})
+target_compile_options(rcrl_compiler_tests  PRIVATE ${LIBCLANG_CXXFLAGS})
+
 # link to dl for dlopen() and dlclose()
 if(UNIX AND NOT APPLE)
-    target_link_libraries(rcrl_compiler_tests PRIVATE dl)
+    target_link_libraries(rcrl_compiler_tests PRIVATE dl clang ${LIBCLANG_LIBRARIES})
 endif()
 
 # export symbols from executable
@@ -30,22 +32,8 @@ set_target_properties(rcrl_compiler_tests PROPERTIES ENABLE_EXPORTS ON)
 # add include directory
 target_include_directories(rcrl_compiler_tests PUBLIC ../src)
 
-# the test plugin
-add_library(test_plugin SHARED EXCLUDE_FROM_ALL ${plugin_file})
-target_link_libraries(test_plugin rcrl_compiler_tests)
-set_target_properties(test_plugin PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD 1)
-set_target_properties(test_plugin PROPERTIES PREFIX "")
-if(APPLE)
-    # weird flags to make it link to the executable - see this: https://stackoverflow.com/questions/48176641
-    set_target_properties(test_plugin PROPERTIES LINK_FLAGS "-undefined dynamic_lookup")
-endif()
-if(MSVC)
-	set_target_properties(test_plugin PROPERTIES LINK_FLAGS /DEBUG:NONE)
-endif()
-
 add_test(NAME rcrl_compiler_tests COMMAND rcrl_compiler_tests)
 
 # folders for the third party libs
-set_target_properties(test_plugin PROPERTIES FOLDER "tests")
 set_target_properties(rcrl_parser_tests PROPERTIES FOLDER "tests")
 set_target_properties(rcrl_compiler_tests PROPERTIES FOLDER "tests")
