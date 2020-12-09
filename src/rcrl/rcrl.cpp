@@ -33,7 +33,8 @@ typedef HMODULE RCRL_Dynlib;
 
 #include <dlfcn.h>
 typedef void* RCRL_Dynlib;
-#define RDRL_LoadDynlib(lib) dlopen(lib, RTLD_NOW)
+#define RDRL_LoadDynlib(lib) \
+  dlopen(lib, RTLD_DEEPBIND | RTLD_LAZY | RTLD_GLOBAL)
 #define RCRL_CloseDynlib dlclose
 #define RCRL_CopyDynlib(src, dst) \
   (!system((string("cp ") + src + " " + dst).c_str()))
@@ -128,8 +129,15 @@ bool Plugin::CompileCode(string code) {
   compiler_process_ = std::async(std::launch::async, [&]() {
     bp::async_pipe ap(ios_);
     auto output_buffer{boost::asio::buffer(buf)};
-    bp::child c("/usr/bin/ninja", "-v", (bp::std_err & bp::std_out) > ap,
-                bp::std_in.close());
+    // must use clang++ as g++ differ from libclang deduced types
+    auto cmd = bp::search_path("clang++").string() + string(" ");
+    for (auto flag : parser_.get_flags()) {
+      cmd += flag + string(" ");
+    }
+    cmd += "-shared -fvisibility=hidden -fPIC " + parser_.get_file_name() +
+           " -o " + GetBaseNameFromSourceName((parser_.get_file_name())) +
+           ".so";
+    bp::child c(cmd, (bp::std_err & bp::std_out) > ap, bp::std_in.close());
     auto OnStdout = [&](const boost::system::error_code& ec, std::size_t size) {
       auto lambda_impl = [&](const boost::system::error_code& ec, std::size_t n,
                              auto& lambda_ref) {
@@ -159,11 +167,12 @@ bool Plugin::IsCompiling() {
 
 bool Plugin::TryGetExitStatusFromCompile(int& exit_code) {
   if (compiler_process_.valid() && !IsCompiling()) {
+    exit_code = compiler_process_.get();
+    last_compile_successful_ = (exit_code == 0);
     compiler_output_.append("\nSignaled with sginal #" +
                             std::to_string(exit_code) + ", aka " +
                             strsignal(exit_code) + "\n");
-    exit_code = compiler_process_.get();
-    if ((last_compile_successful_ = exit_code == 0)) {
+    if (last_compile_successful_) {
       auto header = GetHeaderNameFromSourceName(parser_.get_file_name());
       parser_.GenerateHeaderFile(header);
     }
