@@ -74,9 +74,6 @@ int main() {
   TextEditor history;
   history.SetLanguageDefinition(TextEditor::LanguageDefinition::CPlusPlus());
   history.SetReadOnly(true);
-  // this is the precompiled header for the plugin in this demo project so it's
-  // contents are always there for the plugin
-  // history.SetText("#include \"precompiled_for_plugin.h\"\n");
 
   // an editor instance - compiler output - with an empty language definition
   // and a custom palette
@@ -260,7 +257,6 @@ cout << vec.size() << endl;
         program_output.SetCursorPosition({program_output.GetTotalLines(), 0});
 
         last_compiler_exitcode = 0;
-        // history.SetText("#include \"precompiled_for_plugin.h\"\n");
 
         // highlight the new stdout lines
         do_breakpoints_on_output(old_line_count, output_from_cleanup);
@@ -323,7 +319,7 @@ cout << vec.size() << endl;
         history.SetText(history_text + editor.GetText());
 
         // load the new plugin
-        auto output_from_loading = compiler.CopyAndLoadNewPlugin(false);
+        auto output_from_loading = compiler.CopyAndLoadNewPlugin(true);
         auto old_line_count = program_output.GetTotalLines();
         program_output.SetText(program_output.GetText() + output_from_loading);
         // TODO: used for auto-scroll but the cursor in the editor is removed
