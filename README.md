@@ -29,7 +29,7 @@ The demo is tested on Windows/Linux/MacOS and uses OpenGL 2.
 
 You will need:
 - CMake 3.0 or newer
-- A C++14 capable compiler (tested with VS 2015+, GCC 5+, Clang 3.6+)
+- A C++17 capable compiler <!-- (tested with VS 2015+, GCC 7+, Clang 3.6+) -->
 
 The repository makes use of a few third party libraries and they are setup as submodules of the repo (in ```src/third_party/```). Here are the steps you'll need to setup, build and run the project after cloning it:
 
@@ -37,3 +37,16 @@ The repository makes use of a few third party libraries and they are setup as su
 - ```cmake path/to/repo``` - call cmake to generate the build files
 - ```cmake --build .``` - compiles the project
 - the resulting binary is ```host_app``` in ```bin``` of the build folder
+
+## TODO
+
+- [x] use libclang
+- [x] replace tiny process with boost process
+- [ ] rewrite test cases
+- [ ] smarter header generation for functions and variables
+- [ ] allow redefinition (currently shadow subsequent variables except in the same buffer RTLD_DEEPBIND)
+- [ ] test on windows
+- [ ] check for errors in compilation 
+- [ ] check for errors in compiler command
+- [ ] add timeout for compilation
+- [ ] add option to add link flags
