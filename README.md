@@ -50,3 +50,4 @@ The repository makes use of a few third party libraries and they are setup as su
 - [ ] check for errors in compiler command
 - [ ] add timeout for compilation
 - [ ] add option to add link flags
+- [ ] maybe use [zapcc](https://github.com/yrnkrn/zapcc) for better a compilation time
