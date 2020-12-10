@@ -123,12 +123,11 @@ bool Plugin::CompileCode(string code) {
   parser_.GenerateSourceFile(parser_.get_file_name());
   // mark the successful compilation flag as false
   last_compile_successful_ = false;
-
-  static std::vector<char> buf(1 << 12);
   ios_.restart();
+  static std::vector<char> buf;
   compiler_process_ = std::async(std::launch::async, [&]() {
     bp::async_pipe ap(ios_);
-    auto output_buffer{boost::asio::buffer(buf)};
+    auto output_buffer = boost::asio::dynamic_buffer(buf);
     // must use clang++ as g++ differ from libclang deduced types
     auto cmd = bp::search_path("clang++").string() + string(" ");
     for (auto flag : parser_.get_flags()) {
