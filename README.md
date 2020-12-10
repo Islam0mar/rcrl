@@ -53,7 +53,8 @@ The repository makes use of a few third party libraries and they are setup as su
 - [x] use libclang
 - [x] replace tiny process with boost process
 - [ ] rewrite test cases
-- [ ] smarter header generation for functions and variables
+- [x] smarter header generation for functions and variables
+- [ ] support class,struct,enum,... def.
 - [ ] allow redefinition (currently shadow subsequent variables except in the same buffer RTLD_DEEPBIND)
 - [ ] test on windows
 - [ ] check for errors in compilation 
