@@ -38,8 +38,18 @@ The repository makes use of a few third party libraries and they are setup as su
 - ```cmake --build .``` - compiles the project
 - the resulting binary is ```host_app``` in ```bin``` of the build folder
 
+## Recipe 
+
+- Text input is feed to clang.
+- Traverse the parsed code for functions & variables definition "ignore errors".
+- Add export prefix for them and put them in plugin.cpp.
+- Every non-parsed text would be regarded as once in plugin.cpp.
+- Append plugin.hpp with functions prototypes and extern variables.
+- Load library with `RTLD_GLOBAL`, so variables can be reused.
+
 ## TODO
 
+- [ ] resolve license: GNU General Public License
 - [x] use libclang
 - [x] replace tiny process with boost process
 - [ ] rewrite test cases
@@ -50,3 +60,10 @@ The repository makes use of a few third party libraries and they are setup as su
 - [ ] check for errors in compiler command
 - [ ] add timeout for compilation
 - [ ] add option to add link flags
+- [ ] maybe use [zapcc](https://github.com/yrnkrn/zapcc) for better a compilation time
+
+
+## Copyright
+
+Copyright (c) 2018 Viktor Kirilov<br />
+Copyright (c) 2020 Islam Omar (io1131@fayoum.edu.eg)
