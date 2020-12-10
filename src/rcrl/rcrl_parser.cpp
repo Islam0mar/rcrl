@@ -3,6 +3,7 @@
 #include <clang-c/Index.h>
 
 #include <algorithm>
+#include <cassert>
 #include <cstring>
 #include <fstream>
 #include <iomanip>
@@ -36,6 +37,8 @@ std::ostream& operator<<(std::ostream& out, const CodeBlock& p) {
 }
 
 auto AstVisitor(CXCursor c, CXCursor parent, CXClientData code_blocks_ptr) {
+  // supress compiler warnning
+  (void)parent;
   CXFile f;
   auto return_val = CXChildVisit_Continue;
   auto& code_blocks =
@@ -352,7 +355,19 @@ void PluginParser::GenerateHeaderFile(string file_name) {
       }
       case CXCursor_FunctionTemplate:
       case CXCursor_InclusionDirective:
-      case CXCursor_UsingDirective: {
+      case CXCursor_UsingDirective:
+      case CXCursor_EnumConstantDecl:
+      case CXCursor_TypeAliasTemplateDecl:
+      case CXCursor_TypedefDecl:
+      case CXCursor_ClassTemplate:
+      case CXCursor_ClassTemplatePartialSpecialization:
+      case CXCursor_StructDecl:
+      case CXCursor_TypeAliasDecl:
+      case CXCursor_UnionDecl:
+      case CXCursor_UsingDeclaration:
+      case CXCursor_EnumDecl:
+      case CXCursor_ClassDecl:
+      case CXCursor_OverloadedDeclRef: {
         AppendValidCodeBlock(code);
         break;
       }
@@ -370,6 +385,9 @@ void PluginParser::GenerateHeaderFile(string file_name) {
           c_str = clang_getCursorSpelling(c);
           generated_file_content_ += clang_getCString(c_str);
         } else {
+          if (clang_getCursorKind(code.cursor) != CXCursor_FunctionDecl) {
+            assert(false);
+          }
           // func decl
           // using x = return_type;
           // extern return_type ...
