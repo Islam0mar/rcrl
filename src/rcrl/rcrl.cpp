@@ -16,7 +16,6 @@
 #include <vector>
 
 #include "config.h"
-#include "debug.hpp"
 #include "rcrl_parser.h"
 
 #ifdef _WIN32

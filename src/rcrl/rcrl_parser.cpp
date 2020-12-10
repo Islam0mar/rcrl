@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "config.h"
+#include "debug.hpp"
 
 using std::cerr;
 using std::cout;
@@ -209,9 +210,11 @@ string PluginParser::ReadToOneOfCharacters(Point start, string chars) {
 // end point shouldn't be taken
 void PluginParser::AppendRange(Point start, Point end) {
   if (start < end) {
+    DEBUG(file_content_[start.line - 1]);
+    DEBUG(start, end);
     if (start.line == end.line) {
       generated_file_content_.append(file_content_[start.line - 1].substr(
-          start.column - 1, end.column - 1));
+          start.column - 1, end.column - start.column));
     } else {
       while (start.line < end.line) {
         generated_file_content_.append(file_content_[start.line - 1]);
@@ -274,8 +277,8 @@ void PluginParser::AppendOnceCodeBlocks() {
       line++;
       column = 1;
     }
-    generated_file_content_.append(
-        file_content_[line - 1].substr(column - 1, c.start_pos.column - 1));
+    generated_file_content_.append(file_content_[line - 1].substr(
+        column - 1, c.start_pos.column - column));
     if (clang_getCursorKind(c.cursor) != CXCursor_Namespace) {
       line = c.end_pos.line;
       column = c.end_pos.column;
@@ -341,49 +344,71 @@ void PluginParser::GenerateSourceFile(string file_name, string prepend_str,
 
 void PluginParser::GenerateHeaderFile(string file_name) {
   generated_file_content_ = "";
+  DEBUG(code_blocks_);
   for (const auto& code : code_blocks_) {
     switch (clang_getCursorKind(code.cursor)) {
+      case CXCursor_Namespace: {
+        break;
+      }
       case CXCursor_FunctionTemplate:
+      case CXCursor_InclusionDirective:
       case CXCursor_UsingDirective: {
         AppendValidCodeBlock(code);
         break;
       }
-      case CXCursor_InclusionDirective: {
-        // avoid including the same header
-        auto str = ReadToOneOfCharacters(code.start_pos, "\n") + "\n";
-        auto header = GetHeaderNameFromSourceName(file_name_);
-        if (str.find(header) == std::string::npos) {
-          generated_file_content_.append(str);
-        }
-        break;
-      }
       default: {
-        // add space to avoid matching auto substring
-        auto str = string(" ");
         CXString c_str;
-        if (clang_getCursorKind(code.cursor) == CXCursor_VarDecl) {
-          c_str = clang_getTypeSpelling((clang_getCursorType(code.cursor)));
-          str += ReadToOneOfCharacters(code.start_pos, "{=(;") + ";\n";
+        auto c = code.cursor;
+        auto gen_sym = "_" + std::to_string(code_gen_number_++) + "_t";
+        if (clang_getCursorKind(c) == CXCursor_VarDecl) {
+          c_str = clang_getTypeSpelling((clang_getCursorType(c)));
+          generated_file_content_ += string("using ") + gen_sym +
+                                     string(" = ") + clang_getCString(c_str) +
+                                     string(";\n" RCRL_IMPORT_API " extern ") +
+                                     gen_sym + " ";
+          clang_disposeString(c_str);
+          c_str = clang_getCursorSpelling(c);
+          generated_file_content_ += clang_getCString(c_str);
         } else {
           // func decl
+          // using x = return_type;
+          // extern return_type ...
           c_str = clang_getTypeSpelling(
-              clang_getResultType(clang_getCursorType(code.cursor)));
-          // TODO: support function argument intializers;
-          str += ReadToOneOfCharacters(code.start_pos, "{") + ";\n";
+              clang_getResultType(clang_getCursorType(c)));
+          generated_file_content_ += string("using ") + gen_sym +
+                                     string(" = ") + clang_getCString(c_str) +
+                                     string(";\n" RCRL_IMPORT_API " extern ") +
+                                     gen_sym + " ";
+          clang_disposeString(c_str);
+          // extern return_type f_name(...
+          c_str = clang_getCursorSpelling(c);
+          generated_file_content_ += clang_getCString(c_str) + string("(");
+          // extern return_type f_name(arg1 , arg2, ...)
+          for (auto i = 0, n = clang_Cursor_getNumArguments(c); i < n; ++i) {
+            if (i > 0) {
+              generated_file_content_ += ", ";
+            }
+            auto c_arg = clang_Cursor_getArgument(c, i);
+            unsigned int lin, col;
+            c_arg = clang_getCursorDefinition(c_arg);
+            clang_getExpansionLocation(
+                clang_getRangeStart(clang_getCursorExtent(c_arg)), nullptr,
+                &lin, &col, nullptr);
+            Point start = {lin, col};
+            clang_getExpansionLocation(
+                clang_getRangeEnd(clang_getCursorExtent(c_arg)), nullptr, &lin,
+                &col, nullptr);
+            Point end = {lin, col};
+            DEBUG(start, end);
+            AppendRange(start, end);
+          }
+          if (clang_Cursor_isVariadic(c)) {
+            generated_file_content_ += "...";
+          }
+          generated_file_content_ += ")";
         }
-        string variable_type = clang_getCString(c_str);
         clang_disposeString(c_str);
-        auto tmp = str.find(" auto ");
-        if (tmp != std::string::npos && tmp < str.find('{')) {
-          auto gen_sym = "_" + std::to_string(code_gen_number_++) + "_t";
-          variable_type = string("using ") + gen_sym + string(" = ") +
-                          variable_type +
-                          string(";\n" RCRL_IMPORT_API " extern " + gen_sym);
-          str.replace(str.find(" auto"), 5, variable_type);
-        } else {
-          str = RCRL_IMPORT_API " extern " + str;
-        }
-        generated_file_content_.append(str);
+        generated_file_content_ += ";\n";
         break;
       }
     }
