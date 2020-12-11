@@ -128,10 +128,11 @@ bool Plugin::CompileCode(string code) {
   last_compile_successful_ = false;
   compiler_output_.clear();
   ios_.restart();
-  static std::vector<char> buf;
+  // TODO: add buffer size to config file
+  static std::vector<char> buf(128);
   compiler_process_ = std::async(std::launch::async, [&]() {
     bp::async_pipe ap(ios_);
-    auto output_buffer = boost::asio::dynamic_buffer(buf);
+    auto output_buffer = boost::asio::buffer(buf);
     // must use clang++ as g++ differ from libclang deduced types
     auto cmd = bp::search_path("clang++").string() + string(" ");
     for (auto flag : parser_.get_flags()) {
