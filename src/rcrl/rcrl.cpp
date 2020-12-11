@@ -122,8 +122,6 @@ bool Plugin::CompileCode(string code) {
   auto header = GetHeaderNameFromSourceName(parser_.get_file_name());
   file << "#include \"" + header + "\"\n" << code;
   file.close();
-  parser_.Reparse();
-  parser_.GenerateSourceFile(parser_.get_file_name());
   // mark the successful compilation flag as false
   last_compile_successful_ = false;
   compiler_output_.clear();
@@ -131,6 +129,9 @@ bool Plugin::CompileCode(string code) {
   // TODO: add buffer size to config file
   static std::vector<char> buf(128);
   compiler_process_ = std::async(std::launch::async, [&]() {
+    // reparsing takes some time so moved inside async
+    parser_.Reparse();
+    parser_.GenerateSourceFile(parser_.get_file_name());
     bp::async_pipe ap(ios_);
     auto output_buffer = boost::asio::buffer(buf);
     // must use clang++ as g++ differ from libclang deduced types
