@@ -1,15 +1,3 @@
-[submodule "src/third_party/glfw"]
-	path = src/third_party/glfw
-	url = https://github.com/glfw/glfw.git
-[submodule "src/third_party/imgui"]
-	path = src/third_party/imgui
-	url = https://github.com/ocornut/imgui.git
-[submodule "src/third_party/ImGuiColorTextEdit"]
-	path = src/third_party/ImGuiColorTextEdit
-	url = https://github.com/BalazsJako/ImGuiColorTextEdit.git
-[submodule "src/third_party/tiny-process-library"]
-	path = src/third_party/tiny-process-library
-	url = https://github.com/eidheim/tiny-process-library.git
 [submodule "tests/doctest"]
 	path = tests/doctest
 	url = https://github.com/onqtam/doctest.git
