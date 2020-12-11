@@ -32,17 +32,17 @@ inline string GetHeaderNameFromSourceName(string str) {
 
 class PluginParser {
  public:
-  PluginParser(string file_name, std::vector<const char*> command_line_args =
-                                     std::vector<const char*>(0));
+  PluginParser(string file_name,
+               std::vector<string> command_line_args = std::vector<string>(0));
   ~PluginParser();
   void Reparse();
   void GenerateSourceFile(string file_name, string prepend_str = "",
                           string append_str = "");
   void GenerateHeaderFile(string file_name);
   string get_file_name();
-  std::vector<const char*> get_flags();
+  std::vector<string> get_flags();
   // runs ParseWithOtherFlags internally
-  void set_flags(std::vector<const char*> new_flags);
+  void set_flags(std::vector<string> new_flags);
 
  private:
   void Parse();
@@ -57,7 +57,7 @@ class PluginParser {
   string generated_file_content_;
   std::vector<string> file_content_;
   std::vector<CodeBlock> code_blocks_;
-  std::vector<const char*> flags_;
+  std::vector<string> flags_;
   std::vector<std::tuple<Point, Point, string>> name_space_end_;
   std::tuple<CXIndex, CXTranslationUnit> ast_;
   const string file_name_;

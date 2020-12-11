@@ -12,13 +12,11 @@
 #include <vector>
 
 #include "config.h"
-#include "debug.hpp"
 
 using std::cerr;
 using std::cout;
 using std::endl;
 using std::string;
-using VS = std::vector<const char*>;
 
 namespace rcrl {
 std::ostream& operator<<(std::ostream& stream, const CXString& str) {
@@ -116,8 +114,13 @@ void PluginParser::Parse() {
   code_blocks_.clear();
   name_space_end_.clear();
   CXIndex index = clang_createIndex(0, 0);
+  std::vector<const char*> flags(flags_.size());
+  auto i = 0;
+  for (auto f : flags_) {
+    flags[i++] = f.c_str();
+  }
   CXTranslationUnit ast = clang_parseTranslationUnit(
-      index, file_name_.c_str(), flags_.data(), flags_.size(), nullptr, 0,
+      index, file_name_.c_str(), flags.data(), flags.size(), nullptr, 0,
       CXTranslationUnit_DetailedPreprocessingRecord |  // make headers readable
           CXTranslationUnit_Incomplete | CXTranslationUnit_KeepGoing |
           CXTranslationUnit_CreatePreambleOnFirstParse |
@@ -139,8 +142,13 @@ void PluginParser::ParseWithOtherFlags() {
   code_blocks_.clear();
   auto [i, tu] = ast_;
   clang_disposeTranslationUnit(tu);
+  std::vector<const char*> flags(flags_.size());
+  auto ix = 0;
+  for (auto f : flags_) {
+    flags[ix++] = f.c_str();
+  }
   CXTranslationUnit ast = clang_parseTranslationUnit(
-      i, file_name_.c_str(), flags_.data(), flags_.size(), nullptr, 0,
+      i, file_name_.c_str(), flags.data(), flags.size(), nullptr, 0,
       CXTranslationUnit_DetailedPreprocessingRecord |  // make headers readable
           CXTranslationUnit_Incomplete | CXTranslationUnit_KeepGoing |
           CXTranslationUnit_CreatePreambleOnFirstParse |
@@ -165,7 +173,7 @@ void PluginParser::Reparse() {
   GenerateCodeBlocksFromAst(ast, &code_blocks_);
 }
 
-PluginParser::PluginParser(string file_name, std::vector<const char*> flags)
+PluginParser::PluginParser(string file_name, std::vector<string> flags)
     : generated_file_content_(""),
       flags_(flags),
       file_name_(file_name),
@@ -184,8 +192,8 @@ PluginParser::~PluginParser() {
 }
 
 string PluginParser::get_file_name() { return file_name_; }
-std::vector<const char*> PluginParser::get_flags() { return flags_; }
-void PluginParser::set_flags(std::vector<const char*> f) {
+std::vector<string> PluginParser::get_flags() { return flags_; }
+void PluginParser::set_flags(std::vector<string> f) {
   flags_ = f;
   ParseWithOtherFlags();
 }
@@ -213,8 +221,6 @@ string PluginParser::ReadToOneOfCharacters(Point start, string chars) {
 // end point shouldn't be taken
 void PluginParser::AppendRange(Point start, Point end) {
   if (start < end) {
-    DEBUG(file_content_[start.line - 1]);
-    DEBUG(start, end);
     if (start.line == end.line) {
       generated_file_content_.append(file_content_[start.line - 1].substr(
           start.column - 1, end.column - start.column));
@@ -347,7 +353,6 @@ void PluginParser::GenerateSourceFile(string file_name, string prepend_str,
 
 void PluginParser::GenerateHeaderFile(string file_name) {
   generated_file_content_ = "";
-  DEBUG(code_blocks_);
   for (const auto& code : code_blocks_) {
     switch (clang_getCursorKind(code.cursor)) {
       case CXCursor_Namespace: {
@@ -417,7 +422,6 @@ void PluginParser::GenerateHeaderFile(string file_name) {
                 clang_getRangeEnd(clang_getCursorExtent(c_arg)), nullptr, &lin,
                 &col, nullptr);
             Point end = {lin, col};
-            DEBUG(start, end);
             AppendRange(start, end);
           }
           if (clang_Cursor_isVariadic(c)) {

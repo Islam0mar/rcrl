@@ -13,7 +13,7 @@ namespace rcrl {
 class Plugin {
  public:
   Plugin(string source_file_base_name = "plugin",
-         std::vector<const char*> flags = std::vector<const char*>(0));
+         std::vector<string> flags = std::vector<string>(0));
   string get_new_compiler_output();
   string CleanupPlugins(bool redirect_stdout = false);
   bool CompileCode(string code);
@@ -21,6 +21,7 @@ class Plugin {
 
   bool TryGetExitStatusFromCompile(int& exitcode);
   string CopyAndLoadNewPlugin(bool redirect_stdout);
+  void set_flags(std::vector<string> new_flags);
 
  private:
   // global state

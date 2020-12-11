@@ -48,12 +48,16 @@ using std::endl;
 using std::string;
 
 namespace rcrl {
-Plugin::Plugin(string file_base_name, std::vector<const char*> flags)
+Plugin::Plugin(string file_base_name, std::vector<string> flags)
     : parser_(file_base_name + ".cpp", flags) {
   auto header = GetHeaderNameFromSourceName(parser_.get_file_name());
   std::ofstream f(header, std::fstream::trunc | std::fstream::out);
   f << "#pragma once\n";
   f.close();
+}
+
+void Plugin::set_flags(std::vector<string> new_flags) {
+  parser_.set_flags(new_flags);
 }
 
 string Plugin::get_new_compiler_output() {

@@ -8,6 +8,7 @@
 #include <thread>
 
 #include "host_app.h"
+#include "rcrl/debug.hpp"
 #include "rcrl/rcrl.h"
 
 using namespace std;
@@ -41,8 +42,9 @@ void My_ImGui_ImplGlfwGL2_KeyCallback(GLFWwindow* w, int key, int scancode,
 
 int main() {
   // Compiler
-  std::vector<const char*> args = {"-std=c++17", "-O0",    "-Wall",
-                                   "-Wextra",    "-ggdb3", "-lm"};
+  char flags[255] = "";
+  std::vector<string> args = {"-std=c++17", "-O0",    "-Wall",
+                              "-Wextra",    "-ggdb3", "-lm"};
   rcrl::Plugin compiler("plugin", args);
   // Setup window
   glfwSetErrorCallback([](int error, const char* description) {
@@ -239,13 +241,22 @@ cout << vec.size() << endl;
       ImGui::EndChild();
 
       // bottom buttons
-      ImGui::Text("Default mode:");
+      // ImGui::Text("Compiler flags:");
+      // ImGui::SameLine();
+      ImGui::PushItemWidth(ImGui::GetTextLineHeight() * 10.0);
+      ImGui::InputText("Compiler flags:", flags, 255);
       ImGui::SameLine();
-      ImGui::RadioButton("global", true);
-      ImGui::SameLine();
-      ImGui::RadioButton("vars", true);
-      ImGui::SameLine();
-      ImGui::RadioButton("once", true);
+      if (ImGui::Button("Set compiler flags")) {
+        size_t start;
+        size_t end = 0;
+        auto str = string(flags);
+        args.clear();
+        while ((start = str.find_first_not_of(' ', end)) != std::string::npos) {
+          end = str.find(' ', start);
+          args.emplace_back(str.substr(start, end - start));
+        }
+        compiler.set_flags(args);
+      }
       ImGui::SameLine();
       auto compile = ImGui::Button("Compile and run");
       ImGui::SameLine();
