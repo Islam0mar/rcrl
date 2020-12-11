@@ -126,6 +126,7 @@ bool Plugin::CompileCode(string code) {
   parser_.GenerateSourceFile(parser_.get_file_name());
   // mark the successful compilation flag as false
   last_compile_successful_ = false;
+  compiler_output_.clear();
   ios_.restart();
   static std::vector<char> buf;
   compiler_process_ = std::async(std::launch::async, [&]() {
@@ -148,14 +149,14 @@ bool Plugin::CompileCode(string code) {
         compiler_output_.insert(compiler_output_.end(), buf.begin(),
                                 buf.begin() + n);
         if (!ec && ap.is_open()) {
-          boost::asio::async_read(ap, output_buffer,
-                                  std::bind(lambda_ref, std::placeholders::_1,
-                                            std::placeholders::_2, lambda_ref));
+          ap.async_read_some(output_buffer,
+                             std::bind(lambda_ref, std::placeholders::_1,
+                                       std::placeholders::_2, lambda_ref));
         }
       };
       return lambda_impl(ec, size, lambda_impl);
     };
-    boost::asio::async_read(ap, output_buffer, OnStdout);
+    ap.async_read_some(output_buffer, OnStdout);
     ios_.run();
     c.join();
     return c.exit_code();
