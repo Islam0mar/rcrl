@@ -1,76 +1,97 @@
-#include <GLFW/glfw3.h>
+#include <SDL.h>
 #include <third_party/ImGuiColorTextEdit/TextEditor.h>
-#include <third_party/imgui/examples/opengl2_example/imgui_impl_glfw_gl2.h>
+#include <third_party/imgui/backends/imgui_impl_sdl.h>
 
 #include <chrono>
+#include <cstdint>
 #include <iostream>
-#include <list>
 #include <thread>
 
 #include "host_app.h"
-#include "rcrl/debug.hpp"
+#include "image.hpp"
+#include "imgui.h"
+#include "opengl.hpp"
 #include "rcrl/rcrl.h"
 
-using namespace std;
-
-#define RCRL_LIVE_DEMO 0
-
-bool g_console_visible = !RCRL_LIVE_DEMO;
-
-// my own callback - need to add the new line symbols to make ImGuiColorTextEdit
-// work when 'enter' is pressed
-void My_ImGui_ImplGlfwGL2_KeyCallback(GLFWwindow* w, int key, int scancode,
-                                      int action, int mods) {
-  // calling the callback from the imgui/glfw integration only if not a dash
-  // because when writing an underscore (with shift down) ImGuiColorTextEdit
-  // does a paste - see this for more info:
-  // https://github.com/BalazsJako/ImGuiColorTextEdit/issues/18
-  if (key != '-') ImGui_ImplGlfwGL2_KeyCallback(w, key, scancode, action, mods);
-
-  // add the '\n' char when 'enter' is pressed - for ImGuiColorTextEdit
-  ImGuiIO& io = ImGui::GetIO();
-  if (key == GLFW_KEY_ENTER && !io.KeyCtrl &&
-      (action == GLFW_PRESS || action == GLFW_REPEAT))
-    io.AddInputCharacter((unsigned short)'\n');
-
-  // console toggle
-  if (!io.WantCaptureKeyboard && !io.WantTextInput &&
-      key == GLFW_KEY_GRAVE_ACCENT &&
-      (action == GLFW_PRESS || action == GLFW_REPEAT))
-    g_console_visible = !g_console_visible;
-}
-
+using std::cerr;
+using std::cout;
+using std::endl;
+using std::string;
 int main() {
+  bool console_visible = true;
   // Compiler
   char flags[255] = "";
   std::vector<string> args = {"-std=c++17", "-O0",    "-Wall",
                               "-Wextra",    "-ggdb3", "-lm"};
   rcrl::Plugin compiler("plugin", args);
-  // Setup window
-  glfwSetErrorCallback([](int error, const char* description) {
-    fprintf(stderr, "%d %s", error, description);
-  });
-  if (!glfwInit()) return 1;
 
-  GLFWwindow* window = glfwCreateWindow(
-      1280, 1024, "Read-Compile-Run-Loop - REPL for C++", nullptr, nullptr);
-  glfwMakeContextCurrent(window);
+  // Setup SDL
+  // (Some versions of SDL before <2.0.10 appears to have performance/stalling
+  // issues on a minority of Windows systems, depending on whether
+  // SDL_INIT_GAMECONTROLLER is enabled or disabled.. updating to latest version
+  // of SDL is recommended!)
+  if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) !=
+      0) {
+    printf("Error: %s\n", SDL_GetError());
+    return -1;
+  }
 
-  // Setup ImGui binding
+  // Decide GL+GLSL versions
+#ifdef __APPLE__
+  // GL 3.2 Core + GLSL 150
+  const char *glsl_version = "#version 150";
+  SDL_GL_SetAttribute(
+      SDL_GL_CONTEXT_FLAGS,
+      SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);  // Always required on Mac
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+#else
+  // GL 3.0 + GLSL 130
+  const char *glsl_version = "#version 130";
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#endif
+
+  // Create window with graphics context
+  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+  SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+  SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+  SDL_WindowFlags window_flags = (SDL_WindowFlags)(
+      SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+  SDL_Window *window = SDL_CreateWindow(
+      "Read-Compile-Run-Loop - REPL for C++", SDL_WINDOWPOS_CENTERED,
+      SDL_WINDOWPOS_CENTERED, 1280, 1024, window_flags);
+  SDL_GLContext gl_context = SDL_GL_CreateContext(window);
+  SDL_GL_MakeCurrent(window, gl_context);
+  SDL_GL_SetSwapInterval(1);  // Enable vsync
+
+  if (LoadOpenGL()) {
+    fprintf(stderr, "Failed to initialize OpenGL loader!\n");
+    return 1;
+  }
+
+  // Setup Dear ImGui context
+  IMGUI_CHECKVERSION();
   ImGui::CreateContext();
-  ImGui_ImplGlfwGL2_Init(window, true);
+  ImGuiIO &io = ImGui::GetIO();
+
+  // Setup Dear ImGui style
+  ImGui::StyleColorsClassic();
+
+  // Setup Platform/Renderer backends
+  ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
+  ImGui_ImplOpenGL3_Init(glsl_version);
 
   // remove rounding of the console window
-  ImGuiStyle& style = ImGui::GetStyle();
+  ImGuiStyle &style = ImGui::GetStyle();
   style.WindowRounding = 0.f;
 
-  ImGuiIO& io = ImGui::GetIO();
   io.Fonts->AddFontFromFileTTF(
       CMAKE_SOURCE_DIR "/src/third_party/imgui/misc/fonts/Cousine-Regular.ttf",
       17.f);
-
-  // overwrite with my own callback
-  glfwSetKeyCallback(window, My_ImGui_ImplGlfwGL2_KeyCallback);
 
   // an editor instance - for the already submitted code
   TextEditor history;
@@ -95,54 +116,85 @@ int main() {
   TextEditor editor;
   editor.SetLanguageDefinition(TextEditor::LanguageDefinition::CPlusPlus());
 
-#if !RCRL_LIVE_DEMO
   // set some initial code
-  editor.SetText(R"raw(// global
+  editor.SetText(R"raw(
 // global
+#include <algorithm>
+#include <cstdio>
 #include <iostream>
+#include <utility>
+#include <vector>
 
 #include "host_app.h"
-using namespace std;
-// once
-cout << "Hello world!" << endl;
-// global
-#include <vector>
+
+std::cout << "Hello world!" << std::endl;
+// FIXME: use std::
 auto getVec() { return vector<int>({1, 2, 3}); }
-// vars
 auto vec = getVec();
-// once
-cout << vec.size() << endl;
+std::cout << vec.size() << std::endl;
 )raw");
-#endif  // RCRL_LIVE_DEMO
 
   // holds the exit code from the last compilation - there was an error when not
-  // 0
   int last_compiler_exitcode = 0;
 
   // limiting to 50 fps because on some systems the whole machine started
   // lagging when the demo was turned on
-  using frames = chrono::duration<int64_t, ratio<1, 60>>;
-  auto nextFrame = chrono::system_clock::now() + frames{0};
+  using frames = std::chrono::duration<int64_t, std::ratio<1, 60>>;
+  auto nextFrame = std::chrono::system_clock::now() + frames{0};
 
   // add objects in scene
   for (int i = 0; i < 4; ++i) {
     for (int k = 0; k < 4; ++k) {
-      auto& obj = addObject(-7.5f + k * 5, -4.5f + i * 3);
+      auto &obj = addObject(-7.5f + k * 5, -4.5f + i * 3);
       obj.colorize(float(i % 2), float(k % 2), 0);
     }
   }
 
+  // Use loading image which will be displayed while compiling
+  int my_image_width = 512;
+  int my_image_height = 512;
+  GLuint my_image_texture = 0;
+  bool ret = GetTextureFromCStructImage(&my_image_texture, &my_image_width,
+                                        &my_image_height);
+  IM_ASSERT(ret);
+
   // main loop
-  while (!glfwWindowShouldClose(window)) {
-    // poll for events
-    glfwPollEvents();
-    ImGui_ImplGlfwGL2_NewFrame();
+  bool done = false;
+  while (!done) {
+    // Poll and handle events (inputs, window resize, etc.)
+    // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to
+    // tell if dear imgui wants to use your inputs.
+    // - When io.WantCaptureMouse is true, do not dispatch mouse input data to
+    // your main application.
+    // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input
+    // data to your main application. Generally you may always pass all inputs
+    // to dear imgui, and hide them from your application based on those two
+    // flags.
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+      ImGui_ImplSDL2_ProcessEvent(&event);
+      if (event.type == SDL_QUIT) done = true;
+      if (event.type == SDL_WINDOWEVENT &&
+          event.window.event == SDL_WINDOWEVENT_CLOSE &&
+          event.window.windowID == SDL_GetWindowID(window))
+        done = true;
+    }
+
+    // console toggle
+    // should be called before ImGui::NewFrame()
+    if (!io.WantCaptureKeyboard && !io.WantTextInput &&
+        ImGui::IsKeyPressed(SDL_SCANCODE_GRAVE, true)) {
+      console_visible = !console_visible;
+    }
+
+    // Start the Dear ImGui frame
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplSDL2_NewFrame(window);
+    ImGui::NewFrame();
 
     // handle window stretching
-    int display_w, display_h;
-    glfwGetFramebufferSize(window, &display_w, &display_h);
     int window_w, window_h;
-    glfwGetWindowSize(window, &window_w, &window_h);
+    SDL_GetWindowSize(window, &window_w, &window_h);
 
     // console should be always fixed
     ImGui::SetNextWindowSize({(float)window_w, -1.f}, ImGuiCond_Always);
@@ -151,7 +203,7 @@ cout << vec.size() << endl;
     // sets breakpoints on the program_output instance of the text editor widget
     // - used to highlight new output
     auto do_breakpoints_on_output = [&](int old_line_count,
-                                        const std::string& new_output) {
+                                        const std::string &new_output) {
       TextEditor::Breakpoints bps;
       if (old_line_count == program_output.GetTotalLines() && new_output.size())
         bps.insert(old_line_count);
@@ -161,7 +213,8 @@ cout << vec.size() << endl;
       program_output.SetBreakpoints(bps);
     };
 
-    if (g_console_visible &&
+    // console setup
+    if (console_visible &&
         ImGui::Begin("console", nullptr,
                      ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                          ImGuiWindowFlags_NoMove)) {
@@ -193,13 +246,13 @@ cout << vec.size() << endl;
           auto new_curr_pos_2 =
               total_output.find("\n", curr_pos + 1);  // add 1 to skip new lines
           if (new_curr_pos_1 < new_curr_pos_2) {
-            error_markers.insert(make_pair(line, ""));
+            error_markers.insert(std::make_pair(line, ""));
             if (!first_error_marker_line) first_error_marker_line = line;
           }
           if (new_curr_pos_2 < new_curr_pos_1) {
             line++;
           }
-          curr_pos = min(new_curr_pos_1, new_curr_pos_2);
+          curr_pos = std::min(new_curr_pos_1, new_curr_pos_2);
         } while (size_t(curr_pos) != string::npos);
         compiler_output.SetErrorMarkers(error_markers);
 
@@ -241,10 +294,35 @@ cout << vec.size() << endl;
       ImGui::EndChild();
 
       // bottom buttons
-      // ImGui::Text("Compiler flags:");
-      // ImGui::SameLine();
+      // loading image to indicate that we are compiling
+      if (compiler.IsCompiling()) {
+        constexpr float angular_velocity = 10.0f;
+        static float t = 0.0f;
+        static const float scale = 1.2f;
+        static const float angles[] = {0,
+                                       45 * M_PI / 180.0f,
+                                       90 * M_PI / 180.0f,
+                                       135 * M_PI / 180.0f,
+                                       180 * M_PI / 180.0f,
+                                       225 * M_PI / 180.0f,
+                                       270 * M_PI / 180.0f,
+                                       315 * M_PI / 180.0f};
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        t += io.DeltaTime;
+        ImageRotated((void *)(intptr_t)my_image_texture,
+                     ImVec2(p.x + ImGui::GetTextLineHeight() * scale / 2.0f,
+                            p.y + ImGui::GetTextLineHeight() / 2.0f - 1),
+                     ImVec2(ImGui::GetTextLineHeight() * scale,
+                            ImGui::GetTextLineHeight() * scale),
+                     angles[((int)(t * angular_velocity)) % 8]);
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() +
+                             ImGui::GetTextLineHeight() * scale + 5);
+      }
+      // input for compiler flags with button to set it
+      ImGui::Text("Compiler flags:");
+      ImGui::SameLine();
       ImGui::PushItemWidth(ImGui::GetTextLineHeight() * 10.0);
-      ImGui::InputText("Compiler flags:", flags, 255);
+      ImGui::InputText("", flags, 255);
       ImGui::SameLine();
       if (ImGui::Button("Set compiler flags")) {
         size_t start;
@@ -277,23 +355,8 @@ cout << vec.size() << endl;
       ImGui::SameLine();
       ImGui::Dummy({20, 0});
       ImGui::SameLine();
-#if !RCRL_LIVE_DEMO
       ImGui::Text("Use Ctrl+Enter to submit code");
-#endif  // RCRL_LIVE_DEMO
-
-      // if the user has submitted code for compilation
-#if RCRL_LIVE_DEMO
-      extern std::list<const char*> fragments;
-      static bool fragment_popped = false;
-      if (!compiler.IsCompiling() && !fragment_popped && fragments.size() &&
-          io.KeysDown[GLFW_KEY_ENTER] && io.KeyCtrl) {
-        editor.SetText(fragments.front());
-        fragments.pop_front();
-        fragment_popped = true;
-      }
-#else   // RCRL_LIVE_DEMO
-      compile |= (io.KeysDown[GLFW_KEY_ENTER] && io.KeyCtrl);
-#endif  // RCRL_LIVE_DEMO
+      compile |= (io.KeysDown[SDL_SCANCODE_RETURN] && io.KeyCtrl);
       if (compile && !compiler.IsCompiling() && editor.GetText().size() > 1) {
         // clear compiler output
         compiler_output.SetText("");
@@ -304,9 +367,6 @@ cout << vec.size() << endl;
         } else {
           last_compiler_exitcode = 1;
         }
-#if RCRL_LIVE_DEMO
-        fragment_popped = false;
-#endif  // RCRL_LIVE_DEMO
       }
       ImGui::End();
     }
@@ -349,59 +409,36 @@ cout << vec.size() << endl;
     }
 
     // rendering
-    glViewport(0, 0, display_w, display_h);
+    ImGui::Render();
+    glViewport(0, 0, window_w, window_h);
     glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
     glClear(GL_COLOR_BUFFER_BIT);
 
     glPushMatrix();
     glLoadIdentity();
-    glScalef(0.1f, 0.1f * display_w / display_h, 0.1f);
+    glScalef(0.1f, 0.1f * window_w / window_h, 0.1f);
 
-    for (auto& obj : getObjects()) obj.draw();
+    for (auto &obj : getObjects()) obj.draw();
 
     glPopMatrix();
 
-    // finalize rendering
-    ImGui::Render();
-    ImGui_ImplGlfwGL2_RenderDrawData(ImGui::GetDrawData());
-    glfwSwapBuffers(window);
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    SDL_GL_SwapWindow(window);
 
     // do the frame rate limiting
-    this_thread::sleep_until(nextFrame);
+    std::this_thread::sleep_until(nextFrame);
     nextFrame += frames{1};
   }
 
   // cleanup
   compiler.CleanupPlugins();
-  ImGui_ImplGlfwGL2_Shutdown();
+  ImGui_ImplOpenGL3_Shutdown();
+  ImGui_ImplSDL2_Shutdown();
   ImGui::DestroyContext();
-  glfwTerminate();
+
+  SDL_GL_DeleteContext(gl_context);
+  SDL_DestroyWindow(window);
+  SDL_Quit();
 
   return 0;
 }
-
-#if RCRL_LIVE_DEMO
-std::list<const char*> fragments = {
-    R"raw(// global
-#include "host_app.h"
-)raw", R"raw(// vars
-auto& obj = addObject(0, -2);
-)raw", R"raw(// once
-obj.colorize(1, 1, 1);
-)raw",
-    R"raw(// once
-obj.translate(0, -4);
-obj.set_speed(7);
-)raw",   R"raw(// once
-for(auto& curr : getObjects())
-    curr.set_speed(0.1);
-)raw", R"raw(// global
-struct MyType {
-    MyType() { cout << "hello" << endl; }
-    ~MyType() { cout << "bye" << endl; }
-};
-
-// vars
-MyType asd;
-)raw"};
-#endif  // RCRL_LIVE_DEMO
