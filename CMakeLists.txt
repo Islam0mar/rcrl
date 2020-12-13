@@ -29,15 +29,20 @@ endif()
 add_executable(host_app
 # host app sources
     src/main.cpp
+    src/image.cpp
+    src/image.hpp
     src/host_app.cpp
     src/host_app.h
+    src/opengl.hpp
+    src/image_source.h
 # RCRL sources
     src/rcrl/rcrl.h
     src/rcrl/rcrl.cpp
     src/rcrl/rcrl_parser.h
     src/rcrl/rcrl_parser.cpp
 # imgui integration
-    src/third_party/imgui/examples/opengl2_example/imgui_impl_glfw_gl2.cpp
+    src/third_party/imgui/backends/imgui_impl_sdl.cpp
+    src/third_party/imgui/backends/imgui_impl_opengl3.cpp
 )
 
 
@@ -71,37 +76,38 @@ target_compile_definitions(host_app PRIVATE "HOST_APP")
 ####################################################################################################
 
 # imgui
-add_library(imgui STATIC src/third_party/imgui/imgui.cpp src/third_party/imgui/imgui_draw.cpp)
+add_library(imgui STATIC src/third_party/imgui/imgui.cpp src/third_party/imgui/imgui_draw.cpp src/third_party/imgui/imgui_widgets.cpp src/third_party/imgui/imgui_tables.cpp)
 target_include_directories(imgui INTERFACE src/third_party/imgui)
 
 # ImGuiColorTextEdit
 add_library(ImGuiColorTextEdit STATIC src/third_party/ImGuiColorTextEdit/TextEditor.cpp src/third_party/ImGuiColorTextEdit/TextEditor.h)
 target_link_libraries(ImGuiColorTextEdit PRIVATE imgui)
 
-# glfw
-set(GLFW_BUILD_DOCS     OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(GLFW_INSTALL        OFF CACHE BOOL "" FORCE)
-add_subdirectory(src/third_party/glfw)
-
 # folders for the third party libs
-set_target_properties(glfw PROPERTIES FOLDER "third_party")
 set_target_properties(imgui PROPERTIES FOLDER "third_party")
 set_target_properties(ImGuiColorTextEdit PROPERTIES FOLDER "third_party")
 
 # link host app to third party libs
 set(OpenGL_GL_PREFERENCE GLVND)
 find_package(OpenGL REQUIRED)
+find_package(SDL2 REQUIRED)
+# find_package(SDL2_image REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem)
+find_package(Threads REQUIRED)
+find_package(GLEW REQUIRED)
 set (CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package (LibClang REQUIRED)
-target_include_directories(host_app PRIVATE ${Boost_INCLUDE_DIR})
+target_include_directories(host_app PRIVATE ${Boost_INCLUDE_DIRS} ${GLEW_INCLUDE_DIRS} ${SDL2_INCLUDE_DIRS})
 string(REPLACE " " ";" __LIST ${LIBCLANG_CXXFLAGS})
 target_compile_options(host_app PRIVATE ${__LIST})
-target_link_libraries(host_app PRIVATE imgui glfw ImGuiColorTextEdit
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DIMGUI_IMPL_OPENGL_LOADER_GLEW")
+target_link_libraries(host_app PRIVATE imgui ImGuiColorTextEdit
+  ${GLEW_LIBRARIES}
+  ${CMAKE_DL_LIBS}
+  ${CMAKE_THREAD_LIBS_INIT}
   ${Boost_LIBRARIES}
   ${LIBCLANG_LIBRARIES}
+  ${SDL2_LIBRARIES}
   ${OPENGL_LIBRARIES})
 
 ####################################################################################################
