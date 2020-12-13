@@ -46,7 +46,7 @@ class PluginParser {
 
  private:
   void Parse();
-  void ParseWithOtherFlags();
+  void UpdateAstWithOtherFlags();
   string ConsumeToLine(unsigned int line);
   string ReadToOneOfCharacters(Point start, string chars);
   void AppendRange(Point start, Point end);

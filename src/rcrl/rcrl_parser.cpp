@@ -116,7 +116,7 @@ void PluginParser::Parse() {
   CXIndex index = clang_createIndex(0, 0);
   std::vector<const char*> flags(flags_.size());
   auto i = 0;
-  for (auto f : flags_) {
+  for (const auto& f : flags_) {
     flags[i++] = f.c_str();
   }
   CXTranslationUnit ast = clang_parseTranslationUnit(
@@ -130,21 +130,12 @@ void PluginParser::Parse() {
   ast_ = std::make_tuple(index, ast);
 }
 
-void PluginParser::ParseWithOtherFlags() {
-  std::ifstream file(file_name_, std::fstream::in);
-  string line;
-  file_content_.clear();
-  while (std::getline(file, line)) {
-    file_content_.emplace_back(line + "\n");
-  }
-  file.close();
-  name_space_end_.clear();
-  code_blocks_.clear();
+void PluginParser::UpdateAstWithOtherFlags() {
   auto [i, tu] = ast_;
   clang_disposeTranslationUnit(tu);
   std::vector<const char*> flags(flags_.size());
   auto ix = 0;
-  for (auto f : flags_) {
+  for (const auto& f : flags_) {
     flags[ix++] = f.c_str();
   }
   CXTranslationUnit ast = clang_parseTranslationUnit(
@@ -154,7 +145,6 @@ void PluginParser::ParseWithOtherFlags() {
           CXTranslationUnit_CreatePreambleOnFirstParse |
           CXTranslationUnit_IgnoreNonErrorsFromIncludedFiles |
           CXTranslationUnit_IncludeAttributedTypes);
-  GenerateCodeBlocksFromAst(ast, &code_blocks_);
   ast_ = std::make_tuple(i, ast);
 }
 
@@ -195,7 +185,7 @@ string PluginParser::get_file_name() { return file_name_; }
 std::vector<string> PluginParser::get_flags() { return flags_; }
 void PluginParser::set_flags(std::vector<string> f) {
   flags_ = f;
-  ParseWithOtherFlags();
+  UpdateAstWithOtherFlags();
 }
 
 string PluginParser::ReadToOneOfCharacters(Point start, string chars) {
@@ -313,32 +303,36 @@ void PluginParser::GenerateSourceFile(string file_name, string prepend_str,
   std::vector<unsigned int> lines;
   generated_file_content_ = "";
   generated_file_content_ += prepend_str;
-
   for (const auto& code : code_blocks_) {
-    auto kind = clang_getCursorKind(code.cursor);
-    if (kind == CXCursor_UsingDirective || kind == CXCursor_FunctionTemplate ||
-        kind == CXCursor_InclusionDirective) {
-      AppendValidCodeBlock(code);
-    } else {
-      // variable/functions declarations
-      // TODO: extract function parameter intializers.
-      generated_file_content_ += __STR(RCRL_EXPORT_API) + string(" ");
-      auto i = generated_file_content_.size() - 1;
-      AppendValidCodeBlock(code);
-      auto j = generated_file_content_.find(" auto ", i);
-      if (j != std::string::npos && j < generated_file_content_.find("{", i)) {
-        CXString c_str;
-        if (clang_getCursorKind(code.cursor) == CXCursor_VarDecl) {
-          c_str = clang_getTypeSpelling((clang_getCursorType(code.cursor)));
-        } else {
-          // func decl
-          c_str = clang_getTypeSpelling(
-              clang_getResultType(clang_getCursorType(code.cursor)));
+    switch (clang_getCursorKind(code.cursor)) {
+      case CXCursor_Namespace:
+      case CXCursor_FunctionTemplate:
+      case CXCursor_InclusionDirective:
+      case CXCursor_UsingDirective:
+      case CXCursor_EnumConstantDecl:
+      case CXCursor_TypeAliasTemplateDecl:
+      case CXCursor_TypedefDecl:
+      case CXCursor_ClassTemplate:
+      case CXCursor_ClassTemplatePartialSpecialization:
+      case CXCursor_StructDecl:
+      case CXCursor_TypeAliasDecl:
+      case CXCursor_UnionDecl:
+      case CXCursor_UsingDeclaration:
+      case CXCursor_EnumDecl:
+      case CXCursor_ClassDecl:
+      case CXCursor_OverloadedDeclRef: {
+        AppendValidCodeBlock(code);
+        break;
+      }
+      default: {
+        // variable/functions declarations
+        if (clang_getCursorKind(code.cursor) != CXCursor_FunctionDecl &&
+            clang_getCursorKind(code.cursor) != CXCursor_VarDecl) {
+          assert(false);
         }
-        string return_type = clang_getCString(c_str);
-        clang_disposeString(c_str);
-        generated_file_content_.replace(
-            generated_file_content_.find(" auto", i), 5, return_type);
+        generated_file_content_ += __STR(RCRL_EXPORT_API) + string(" ");
+        AppendValidCodeBlock(code);
+        break;
       }
     }
   }
