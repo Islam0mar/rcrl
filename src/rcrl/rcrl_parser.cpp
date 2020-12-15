@@ -11,7 +11,9 @@
 #include <string>
 #include <vector>
 
+#include "clang-c/CXString.h"
 #include "config.h"
+#include "debug.hpp"
 
 using std::cerr;
 using std::cout;
@@ -37,20 +39,22 @@ std::ostream& operator<<(std::ostream& out, const CodeBlock& p) {
 auto AstVisitor(CXCursor c, CXCursor parent, CXClientData code_blocks_ptr) {
   // supress compiler warnning
   (void)parent;
-  CXFile f;
   auto return_val = CXChildVisit_Continue;
   auto& code_blocks =
       *reinterpret_cast<std::vector<CodeBlock>*>(code_blocks_ptr);
-  clang_getExpansionLocation(clang_getCursorLocation(c), &f, nullptr, nullptr,
-                             nullptr);
+  clang_getExpansionLocation(clang_getCursorLocation(c), nullptr, nullptr,
+                             nullptr, nullptr);
   // parse file when:
   //                  in main file
   if (clang_Location_isFromMainFile(clang_getCursorLocation(c)) != 0) {
     unsigned int lin, col;
     CodeBlock code;
-    if (clang_getCursorKind(c) == CXCursor_InclusionDirective) {
-      clang_getExpansionLocation(clang_getCursorLocation(c), nullptr, &lin,
-                                 &col, nullptr);
+    if ((clang_isDeclaration(clang_getCursorKind(c)) != 0 &&
+         clang_isInvalidDeclaration(c) == 0) ||
+        (clang_getCursorKind(c) == CXCursor_InclusionDirective)) {
+      if (clang_getCursorKind(c) == CXCursor_Namespace) {
+        return_val = CXChildVisit_Recurse;
+      }
       clang_getExpansionLocation(clang_getRangeStart(clang_getCursorExtent(c)),
                                  nullptr, &lin, &col, nullptr);
       code.start_pos.column = col;
@@ -60,37 +64,7 @@ auto AstVisitor(CXCursor c, CXCursor parent, CXClientData code_blocks_ptr) {
       code.end_pos.column = col;
       code.end_pos.line = lin;
       code.cursor = c;
-      code_blocks.emplace_back(code);
-    } else if (clang_isDeclaration(clang_getCursorKind(c)) != 0 &&
-               clang_isInvalidDeclaration(c) == 0) {
-      // global section
-      if (clang_getCursorKind(c) != CXCursor_VarDecl) {
-        if (clang_getCursorKind(c) == CXCursor_Namespace) {
-          return_val = CXChildVisit_Recurse;
-        }
-        clang_getExpansionLocation(
-            clang_getRangeStart(clang_getCursorExtent(c)), nullptr, &lin, &col,
-            nullptr);
-        code.start_pos.column = col;
-        code.start_pos.line = lin;
-        clang_getExpansionLocation(clang_getRangeEnd(clang_getCursorExtent(c)),
-                                   nullptr, &lin, &col, nullptr);
-        code.end_pos.column = col;
-        code.end_pos.line = lin;
-        code.cursor = c;
-      } else {
-        // var section
-        clang_getExpansionLocation(
-            clang_getRangeStart(clang_getCursorExtent(c)), nullptr, &lin, &col,
-            nullptr);
-        code.start_pos.column = col;
-        code.start_pos.line = lin;
-        clang_getExpansionLocation(clang_getRangeEnd(clang_getCursorExtent(c)),
-                                   nullptr, &lin, &col, nullptr);
-        code.end_pos.column = col;
-        code.end_pos.line = lin;
-        code.cursor = c;
-      }
+
       code_blocks.emplace_back(code);
     }
   }
@@ -161,6 +135,13 @@ void PluginParser::Reparse() {
   auto ast = std::get<1>(ast_);
   clang_reparseTranslationUnit(ast, 0, 0, CXReparse_None);
   GenerateCodeBlocksFromAst(ast, &code_blocks_);
+  for (auto n = clang_getNumDiagnostics(ast), i = 0U; i < n; i++) {
+    auto d = clang_getDiagnostic(ast, i);
+    auto s = clang_formatDiagnostic(d, 0x37);
+    DEBUG(clang_getCString(s));
+    clang_disposeString(s);
+    clang_disposeDiagnostic(d);
+  }
 }
 
 PluginParser::PluginParser(string file_name, std::vector<string> flags)
