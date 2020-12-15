@@ -13,7 +13,6 @@
 
 #include "clang-c/CXString.h"
 #include "config.h"
-#include "debug.hpp"
 
 using std::cerr;
 using std::cout;
@@ -135,13 +134,6 @@ void PluginParser::Reparse() {
   auto ast = std::get<1>(ast_);
   clang_reparseTranslationUnit(ast, 0, 0, CXReparse_None);
   GenerateCodeBlocksFromAst(ast, &code_blocks_);
-  for (auto n = clang_getNumDiagnostics(ast), i = 0U; i < n; i++) {
-    auto d = clang_getDiagnostic(ast, i);
-    auto s = clang_formatDiagnostic(d, 0x37);
-    DEBUG(clang_getCString(s));
-    clang_disposeString(s);
-    clang_disposeDiagnostic(d);
-  }
 }
 
 PluginParser::PluginParser(string file_name, std::vector<string> flags)
