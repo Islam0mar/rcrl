@@ -41,7 +41,7 @@ class PluginParser {
   void GenerateHeaderFile(string file_name);
   string get_file_name();
   std::vector<string> get_flags();
-  // runs ParseWithOtherFlags internally
+  // runs UpdateAstWithOtherFlags internally
   void set_flags(std::vector<string> new_flags);
 
  private:

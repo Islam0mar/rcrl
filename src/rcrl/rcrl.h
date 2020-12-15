@@ -21,14 +21,14 @@ class Plugin {
 
   bool TryGetExitStatusFromCompile(int& exitcode);
   string CopyAndLoadNewPlugin(bool redirect_stdout);
-  void set_flags(std::vector<string> new_flags);
+  void set_flags(const std::vector<string>& new_flags);
 
  private:
   // global state
   std::vector<std::pair<string, void*>> plugins_;
   string compiler_output_;
   std::mutex compiler_output_mut_;
-  boost::asio::io_service ios_;
+  bool is_compiling_;
   std::future<int> compiler_process_;
   bool last_compile_successful_ = false;
   PluginParser parser_;

@@ -49,15 +49,22 @@ using std::string;
 
 namespace rcrl {
 Plugin::Plugin(string file_base_name, std::vector<string> flags)
-    : parser_(file_base_name + ".cpp", flags) {
+    : is_compiling_(false), parser_(file_base_name + ".cpp", flags) {
   auto header = GetHeaderNameFromSourceName(parser_.get_file_name());
   std::ofstream f(header, std::fstream::trunc | std::fstream::out);
   f << "#pragma once\n";
   f.close();
 }
 
-void Plugin::set_flags(std::vector<string> new_flags) {
-  parser_.set_flags(new_flags);
+void Plugin::set_flags(const std::vector<string>& new_flags) {
+  // avoid calling it's constructor at the function end
+  static std::future<bool> p;
+  assert(!IsCompiling());
+  is_compiling_ = true;
+  p = std::async(std::launch::async, [&]() {
+    parser_.set_flags(new_flags);
+    return (is_compiling_ = false);
+  });
 }
 
 string Plugin::get_new_compiler_output() {
@@ -125,14 +132,15 @@ bool Plugin::CompileCode(string code) {
   // mark the successful compilation flag as false
   last_compile_successful_ = false;
   compiler_output_.clear();
-  ios_.restart();
+  is_compiling_ = true;
   // TODO: add buffer size to config file
   static std::vector<char> buf(128);
   compiler_process_ = std::async(std::launch::async, [&]() {
     // reparsing takes some time so moved inside async
     parser_.Reparse();
     parser_.GenerateSourceFile(parser_.get_file_name());
-    bp::async_pipe ap(ios_);
+    boost::asio::io_service ios;
+    bp::async_pipe ap(ios);
     auto output_buffer = boost::asio::buffer(buf);
     // must use clang++ as g++ differ from libclang deduced types
     auto cmd = bp::search_path("clang++").string() + string(" ");
@@ -159,16 +167,15 @@ bool Plugin::CompileCode(string code) {
       return lambda_impl(ec, size, lambda_impl);
     };
     ap.async_read_some(output_buffer, OnStdout);
-    ios_.run();
+    ios.run();
     c.join();
+    is_compiling_ = false;
     return c.exit_code();
   });
   return true;
 }
 
-bool Plugin::IsCompiling() {
-  return compiler_process_.valid() && !ios_.stopped();
-}
+bool Plugin::IsCompiling() { return is_compiling_; }
 
 bool Plugin::TryGetExitStatusFromCompile(int& exit_code) {
   if (compiler_process_.valid() && !IsCompiling()) {
