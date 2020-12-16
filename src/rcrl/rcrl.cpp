@@ -195,7 +195,7 @@ bool Plugin::TryGetExitStatusFromCompile(int& exit_code) {
 string Plugin::CopyAndLoadNewPlugin(bool redirect_stdout) {
   assert(!IsCompiling());
   assert(last_compile_successful_);
-
+  is_compiling_ = true;
   last_compile_successful_ =
       false;  // shouldn't call this function twice in a
               // row without compiling anything in between
@@ -216,7 +216,6 @@ string Plugin::CopyAndLoadNewPlugin(bool redirect_stdout) {
     fprintf(stderr, "%s\n", dlerror());
     exit(EXIT_FAILURE);
   }
-
   assert(plugin);
 
   // add the plugin to the list of loaded ones - for later unloading
@@ -237,7 +236,7 @@ string Plugin::CopyAndLoadNewPlugin(bool redirect_stdout) {
     fread((void*)out.data(), fsize, 1, f);
     fclose(f);
   }
-
+  is_compiling_ = false;
   return out;
 }
 
