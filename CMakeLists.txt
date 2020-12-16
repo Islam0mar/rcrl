@@ -34,7 +34,7 @@ add_executable(host_app
     src/host_app.cpp
     src/host_app.h
     src/opengl.hpp
-    src/image_source.h
+    src/loading.xpm
 # RCRL sources
     src/rcrl/rcrl.h
     src/rcrl/rcrl.cpp
@@ -91,7 +91,6 @@ set_target_properties(ImGuiColorTextEdit PROPERTIES FOLDER "third_party")
 set(OpenGL_GL_PREFERENCE GLVND)
 find_package(OpenGL REQUIRED)
 find_package(SDL2 REQUIRED)
-# find_package(SDL2_image REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem)
 find_package(Threads REQUIRED)
 find_package(GLEW REQUIRED)
