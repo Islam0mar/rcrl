@@ -50,12 +50,18 @@ auto AstVisitor(CXCursor c, CXCursor parent, CXClientData code_blocks_ptr) {
     CodeBlock code;
     if ((clang_isDeclaration(clang_getCursorKind(c)) != 0 &&
          clang_isInvalidDeclaration(c) == 0) ||
-        (clang_getCursorKind(c) == CXCursor_InclusionDirective)) {
+        (clang_getCursorKind(c) == CXCursor_InclusionDirective) ||
+        (clang_getCursorKind(c) == CXCursor_MacroDefinition) ||
+        (clang_getCursorKind(c) == CXCursor_NamespaceAlias)) {
       if (clang_getCursorKind(c) == CXCursor_Namespace) {
         return_val = CXChildVisit_Recurse;
       }
       clang_getExpansionLocation(clang_getRangeStart(clang_getCursorExtent(c)),
                                  nullptr, &lin, &col, nullptr);
+      // extend macro definition to include "#define "
+      if (clang_getCursorKind(c) == CXCursor_MacroDefinition) {
+        col = 1;
+      }
       code.start_pos.column = col;
       code.start_pos.line = lin;
       clang_getExpansionLocation(clang_getRangeEnd(clang_getCursorExtent(c)),
@@ -212,7 +218,8 @@ void PluginParser::AppendValidCodeBlockWithoutNamespace(CodeBlock code) {
       break;
     }
   }
-  if (clang_getCursorKind(code.cursor) != CXCursor_InclusionDirective) {
+  if (clang_getCursorKind(code.cursor) != CXCursor_InclusionDirective &&
+      clang_getCursorKind(code.cursor) != CXCursor_MacroDefinition) {
     generated_file_content_.append(";\n");
   } else {
     generated_file_content_.append("\n");
@@ -278,6 +285,7 @@ void PluginParser::GenerateSourceFile(string file_name, string prepend_str,
   generated_file_content_ += prepend_str;
   for (const auto& code : code_blocks_) {
     switch (clang_getCursorKind(code.cursor)) {
+      case CXCursor_MacroDefinition:
       case CXCursor_Namespace:
       case CXCursor_FunctionTemplate:
       case CXCursor_InclusionDirective:
@@ -293,6 +301,7 @@ void PluginParser::GenerateSourceFile(string file_name, string prepend_str,
       case CXCursor_UsingDeclaration:
       case CXCursor_EnumDecl:
       case CXCursor_ClassDecl:
+      case CXCursor_NamespaceAlias:
       case CXCursor_OverloadedDeclRef: {
         AppendValidCodeBlock(code);
         break;
@@ -325,7 +334,9 @@ void PluginParser::GenerateHeaderFile(string file_name) {
       case CXCursor_Namespace: {
         break;
       }
+      case CXCursor_MacroDefinition:
       case CXCursor_FunctionTemplate:
+      case CXCursor_NamespaceAlias:
       case CXCursor_InclusionDirective:
       case CXCursor_UsingDirective:
       case CXCursor_EnumConstantDecl:
