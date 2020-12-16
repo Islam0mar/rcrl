@@ -4,12 +4,14 @@
 
 #include <chrono>
 #include <cstdint>
+#include <future>
 #include <iostream>
 #include <thread>
 
 #include "host_app.h"
 #include "image.hpp"
 #include "imgui.h"
+#include "loading.xpm"
 #include "opengl.hpp"
 #include "rcrl/rcrl.h"
 
@@ -151,11 +153,11 @@ std::cout << vec.size() << std::endl;
   }
 
   // Use loading image which will be displayed while compiling
-  int my_image_width = 512;
-  int my_image_height = 512;
-  GLuint my_image_texture = 0;
-  bool ret = GetTextureFromCStructImage(&my_image_texture, &my_image_width,
-                                        &my_image_height);
+  int my_image_width;
+  int my_image_height;
+  GLuint my_image_texture;
+  auto ret = LoadTextureFromPixArray(loading_xpm, &my_image_texture,
+                                     &my_image_width, &my_image_height);
   IM_ASSERT(ret);
 
   // main loop
@@ -298,7 +300,7 @@ std::cout << vec.size() << std::endl;
       if (compiler.IsCompiling()) {
         constexpr float angular_velocity = 10.0f;
         static float t = 0.0f;
-        static const float scale = 1.2f;
+        static const float scale = 1.8f;
         static const float angles[] = {0,
                                        45 * M_PI / 180.0f,
                                        90 * M_PI / 180.0f,
@@ -311,7 +313,7 @@ std::cout << vec.size() << std::endl;
         t += io.DeltaTime;
         ImageRotated((void *)(intptr_t)my_image_texture,
                      ImVec2(p.x + ImGui::GetTextLineHeight() * scale / 2.0f,
-                            p.y + ImGui::GetTextLineHeight() / 2.0f - 1),
+                            p.y + ImGui::GetTextLineHeight() / 2.0f + 3),
                      ImVec2(ImGui::GetTextLineHeight() * scale,
                             ImGui::GetTextLineHeight() * scale),
                      angles[((int)(t * angular_velocity)) % 8]);
@@ -360,7 +362,6 @@ std::cout << vec.size() << std::endl;
       if (compile && !compiler.IsCompiling() && editor.GetText().size() > 1) {
         // clear compiler output
         compiler_output.SetText("");
-        // submit to the RCRL engine
         if (compiler.CompileCode(editor.GetText())) {
           // make the editor code untouchable while compiling
           editor.SetReadOnly(true);
@@ -390,17 +391,21 @@ std::cout << vec.size() << std::endl;
         history.SetText(history_text + editor.GetText());
 
         // load the new plugin
-        auto output_from_loading = compiler.CopyAndLoadNewPlugin(true);
-        auto old_line_count = program_output.GetTotalLines();
-        program_output.SetText(program_output.GetText() + output_from_loading);
-        // TODO: used for auto-scroll but the cursor in the editor is removed
-        // (unfocused) sometimes from this...
-        // program_output.SetCursorPosition({program_output.GetTotalLines(),
-        // 0});
+        static std::future<int> f_output;
+        f_output = std::async(std::launch::async, [&]() {
+          auto output_from_loading = compiler.CopyAndLoadNewPlugin(true);
+          auto old_line_count = program_output.GetTotalLines();
+          program_output.SetText(program_output.GetText() +
+                                 output_from_loading);
+          // TODO: used for auto-scroll but the cursor in the editor is removed
+          // (unfocused) sometimes from this...
+          // program_output.SetCursorPosition({program_output.GetTotalLines(),
+          // 0});
 
-        // highlight the new stdout lines
-        do_breakpoints_on_output(old_line_count, output_from_loading);
-
+          // highlight the new stdout lines
+          do_breakpoints_on_output(old_line_count, output_from_loading);
+          return 0;
+        });
         // clear the editor
         editor.SetText(
             "\r");  // an empty string "" breaks it for some reason...
