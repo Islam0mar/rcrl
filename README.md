@@ -2,7 +2,7 @@
 
 I made some changes to fit my needs.
 
-[picture](showcase.gif)
+![picture](showcase.gif)
 
 - use libclang
 - use sdl2 with opengl3
