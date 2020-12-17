@@ -1,5 +1,44 @@
 ## Read-Compile-Run-Loop: tiny and powerful interactive C++ compiler (REPL)
 
+I made some changes to fit my needs.
+
+[picture](showcase.gif)
+
+- use libclang
+- use sdl2 with opengl3
+- remove tiny-process and glfw
+- add field for compiler flags
+
+## The New Recipe 
+
+- Text input is feed to clang.
+- Traverse the parsed code for functions & variables definition "ignore errors".
+- Add export prefix for them and put them in plugin.cpp.
+- Every non-parsed text would be regarded as once in plugin.cpp.
+- Append plugin.hpp with functions prototypes and extern variables.
+- Load library with `RTLD_GLOBAL`, so variables can be reused.
+
+## TODO
+
+- [ ] resolve license: GNU General Public License
+- [x] use libclang
+- [x] replace tiny process with boost process
+- [ ] rewrite test cases
+- [x] smarter header generation for functions and variables
+- [x] *support class,struct,enum,... def.
+- [ ] allow redefinition (currently shadow subsequent variables except in the same buffer RTLD_DEEPBIND)
+- [ ] test on windows
+- [ ] check for errors in compilation 
+- [ ] check for errors in compiler command
+- [ ] add timeout for compilation
+- [ ] fix parser int x = 0!!
+- [x] fix set-flag lag
+- [x] add an option to add link flags
+- [ ] maybe use [zapcc](https://github.com/yrnkrn/zapcc) for better compilation time
+
+
+
+## Original
 [![Windows status](https://ci.appveyor.com/api/projects/status/fp0sqit57eorgswb/branch/master?svg=true)](https://ci.appveyor.com/project/onqtam/rcrl/branch/master)
 [![Linux Status](https://travis-ci.org/onqtam/rcrl.svg?branch=master)](https://travis-ci.org/onqtam/rcrl)
 [![Language](https://img.shields.io/badge/language-C++-blue.svg)](https://isocpp.org/)
@@ -37,31 +76,6 @@ The repository makes use of a few third party libraries and they are setup as su
 - ```cmake path/to/repo``` - call cmake to generate the build files
 - ```cmake --build .``` - compiles the project
 - the resulting binary is ```host_app``` in ```bin``` of the build folder
-
-## Recipe 
-
-- Text input is feed to clang.
-- Traverse the parsed code for functions & variables definition "ignore errors".
-- Add export prefix for them and put them in plugin.cpp.
-- Every non-parsed text would be regarded as once in plugin.cpp.
-- Append plugin.hpp with functions prototypes and extern variables.
-- Load library with `RTLD_GLOBAL`, so variables can be reused.
-
-## TODO
-
-- [ ] resolve license: GNU General Public License
-- [x] use libclang
-- [x] replace tiny process with boost process
-- [ ] rewrite test cases
-- [x] smarter header generation for functions and variables
-- [x] *support class,struct,enum,... def.
-- [ ] allow redefinition (currently shadow subsequent variables except in the same buffer RTLD_DEEPBIND)
-- [ ] test on windows
-- [ ] check for errors in compilation 
-- [ ] check for errors in compiler command
-- [ ] add timeout for compilation
-- [x] add an option to add link flags
-- [ ] maybe use [zapcc](https://github.com/yrnkrn/zapcc) for better a compilation time
 
 ## Copyright
 
