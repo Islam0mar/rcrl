@@ -11,6 +11,7 @@
 
 using std::string;
 
+// https://github.com/ocornut/imgui/issues/1982#issuecomment-408834301
 static inline ImVec2 operator+(const ImVec2 &lhs, const ImVec2 &rhs) {
   return ImVec2(lhs.x + rhs.x, lhs.y + rhs.y);
 }
@@ -90,6 +91,7 @@ bool XpmParseColors(const char **data, unsigned int ncolors,
     if (color[0] != '#') {
       // TODO: convert color text to uint32
     }
+    // TODO: parse key
     color_map->insert({str, std::stol(color.substr(1), nullptr, 16)});
   }
   return is_ok;
