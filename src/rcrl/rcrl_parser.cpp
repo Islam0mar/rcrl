@@ -334,10 +334,15 @@ void PluginParser::GenerateHeaderFile(string file_name) {
       case CXCursor_Namespace: {
         break;
       }
+      case CXCursor_InclusionDirective: {
+        if (file_content_[code.start_pos.line - 1].find(
+                "#include \"plugin.hpp\"") != std::string::npos) {
+          break;
+        }
+      }
       case CXCursor_MacroDefinition:
       case CXCursor_FunctionTemplate:
       case CXCursor_NamespaceAlias:
-      case CXCursor_InclusionDirective:
       case CXCursor_UsingDirective:
       case CXCursor_EnumConstantDecl:
       case CXCursor_TypeAliasTemplateDecl:

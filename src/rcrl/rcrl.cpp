@@ -32,8 +32,7 @@ typedef HMODULE RCRL_Dynlib;
 
 #include <dlfcn.h>
 typedef void* RCRL_Dynlib;
-#define RDRL_LoadDynlib(lib) \
-  dlopen(lib, RTLD_DEEPBIND | RTLD_LAZY | RTLD_GLOBAL)
+#define RDRL_LoadDynlib(lib) dlopen(lib, RTLD_LAZY | RTLD_GLOBAL)
 #define RCRL_CloseDynlib dlclose
 #define RCRL_CopyDynlib(src, dst) \
   (!system((string("cp ") + src + " " + dst).c_str()))
@@ -111,6 +110,12 @@ string Plugin::CleanupPlugins(bool redirect_stdout) {
             RCRL_PLUGIN_NAME "_*" RCRL_EXTENSION)
                .c_str());
   plugins_.clear();
+
+  // reset header file
+  auto header = GetHeaderNameFromSourceName(parser_.get_file_name());
+  std::ofstream f(header, std::fstream::trunc | std::fstream::out);
+  f << "#pragma once\n";
+  f.close();
 
   return out;
 }
