@@ -18,6 +18,10 @@ I made some changes to fit my needs.
 - Append plugin.hpp with functions prototypes and extern variables.
 - Load library with `RTLD_GLOBAL`, so variables can be reused.
 
+## NOTE 
+
+ **Check [cli branch](https://github.com/Islam0mar/rcrl/tree/cli) for command line version.**
+
 ## TODO
 
 - [ ] resolve license: GNU General Public License
@@ -35,8 +39,6 @@ I made some changes to fit my needs.
 - [x] fix set-flag lag
 - [x] add an option to add link flags
 - [ ] maybe use [zapcc](https://github.com/yrnkrn/zapcc) for better compilation time
-
-
 
 ## Original
 [![Windows status](https://ci.appveyor.com/api/projects/status/fp0sqit57eorgswb/branch/master?svg=true)](https://ci.appveyor.com/project/onqtam/rcrl/branch/master)
