@@ -112,6 +112,11 @@ string Plugin::CleanupPlugins(bool redirect_stdout) {
                .c_str());
   plugins_.clear();
 
+  // reset header file
+  auto header = GetHeaderNameFromSourceName(parser_.get_file_name());
+  std::ofstream f(header, std::fstream::trunc | std::fstream::out);
+  f << "#pragma once\n";
+  
   return out;
 }
 
