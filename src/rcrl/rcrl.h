@@ -20,7 +20,7 @@ class Plugin {
   bool IsCompiling();
 
   bool TryGetExitStatusFromCompile(int& exitcode);
-  string CopyAndLoadNewPlugin(bool redirect_stdout);
+  string CopyAndLoadNewPlugin(bool redirect_stdout = false);
   void set_flags(const std::vector<string>& new_flags);
 
  private:
