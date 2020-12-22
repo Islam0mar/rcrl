@@ -48,8 +48,9 @@ auto AstVisitor(CXCursor c, CXCursor parent, CXClientData code_blocks_ptr) {
   if (clang_Location_isFromMainFile(clang_getCursorLocation(c)) != 0) {
     unsigned int lin, col;
     CodeBlock code;
-    if ((clang_isDeclaration(clang_getCursorKind(c)) != 0 &&
-         clang_isInvalidDeclaration(c) == 0) ||
+    if (clang_isDeclaration(clang_getCursorKind(c)) != 0 &&
+         clang_isInvalidDeclaration(c) == 0 &&
+         clang_isCursorDefinition(c) != 0) ||
         (clang_getCursorKind(c) == CXCursor_InclusionDirective) ||
         (clang_getCursorKind(c) == CXCursor_MacroDefinition) ||
         (clang_getCursorKind(c) == CXCursor_NamespaceAlias)) {
