@@ -55,7 +55,7 @@ Plugin::Plugin(string file_base_name, std::vector<string> flags)
   f << "#pragma once\n";
   f.close();
 }
-
+Plugin::~Plugin() { CleanupPlugins(); }
 void Plugin::set_flags(const std::vector<string>& new_flags) {
   // avoid calling it's constructor at the function end
   static std::future<bool> p;
@@ -116,7 +116,7 @@ string Plugin::CleanupPlugins(bool redirect_stdout) {
   auto header = GetHeaderNameFromSourceName(parser_.get_file_name());
   std::ofstream f(header, std::fstream::trunc | std::fstream::out);
   f << "#pragma once\n";
-  
+
   return out;
 }
 

@@ -38,5 +38,6 @@ debug.txt
 cmake-build-*
 .#*
 .ccls-cache
+.*
 compile_commands.json
 
