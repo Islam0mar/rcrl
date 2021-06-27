@@ -25,7 +25,7 @@ int main() {
   char flags[255] = "";
   std::vector<string> args = {"-std=c++17", "-O0",    "-Wall",
                               "-Wextra",    "-ggdb3", "-lm"};
-  rcrl::Plugin compiler("plugin", args);
+  rcrl::Plugin compiler(rcrl::kRcrlOutputDir / "plugin", args);
 
   // Setup SDL
   // (Some versions of SDL before <2.0.10 appears to have performance/stalling
@@ -210,7 +210,7 @@ std::cout << vec.size() << std::endl;
       if (old_line_count == program_output.GetTotalLines() && new_output.size())
         bps.insert(old_line_count);
       for (auto curr_line = old_line_count;
-           curr_line < program_output.GetTotalLines(); ++curr_line)
+           curr_line <= program_output.GetTotalLines(); ++curr_line)
         bps.insert(curr_line);
       program_output.SetBreakpoints(bps);
     };
@@ -395,7 +395,8 @@ std::cout << vec.size() << std::endl;
         f_output = std::async(std::launch::async, [&]() {
           auto output_from_loading = compiler.CopyAndLoadNewPlugin(true);
           auto old_line_count = program_output.GetTotalLines();
-          program_output.SetText(program_output.GetText() +
+          auto len = program_output.GetText().length();
+          program_output.SetText(program_output.GetText().substr(0, --len) +
                                  output_from_loading);
           // TODO: used for auto-scroll but the cursor in the editor is removed
           // (unfocused) sometimes from this...
