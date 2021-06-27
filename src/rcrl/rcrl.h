@@ -2,17 +2,21 @@
 
 #include <boost/asio.hpp>
 #include <boost/process.hpp>
+#include <filesystem>
 #include <string>
 #include <vector>
 
 #include "rcrl_parser.h"
 
 using std::string;
+namespace fs = std::filesystem;
 namespace rcrl {
+const auto kRcrlOutputDir = fs::temp_directory_path();
+const auto kRcrlOutputFile = kRcrlOutputDir.string() + "/rcrl_stdout.txt";
 
 class Plugin {
  public:
-  Plugin(string source_file_base_name = "plugin",
+  Plugin(fs::path file_base_name_path = kRcrlOutputDir / "plugin",
          std::vector<string> flags = std::vector<string>(0));
   string get_new_compiler_output();
   string CleanupPlugins(bool redirect_stdout = false);

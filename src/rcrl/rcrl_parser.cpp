@@ -84,7 +84,7 @@ void GenerateCodeBlocksFromAst(CXTranslationUnit ast,
 }
 
 void PluginParser::Parse() {
-  std::ifstream file(file_name_, std::fstream::in);
+  std::ifstream file(file_path_, std::fstream::in);
   string line;
   file_content_.clear();
   while (std::getline(file, line)) {
@@ -100,7 +100,7 @@ void PluginParser::Parse() {
     flags[i++] = f.c_str();
   }
   CXTranslationUnit ast = clang_parseTranslationUnit(
-      index, file_name_.c_str(), flags.data(), flags.size(), nullptr, 0,
+      index, file_path_.c_str(), flags.data(), flags.size(), nullptr, 0,
       CXTranslationUnit_DetailedPreprocessingRecord |  // make headers readable
           CXTranslationUnit_Incomplete | CXTranslationUnit_KeepGoing |
           CXTranslationUnit_CreatePreambleOnFirstParse |
@@ -119,7 +119,7 @@ void PluginParser::UpdateAstWithOtherFlags() {
     flags[ix++] = f.c_str();
   }
   CXTranslationUnit ast = clang_parseTranslationUnit(
-      i, file_name_.c_str(), flags.data(), flags.size(), nullptr, 0,
+      i, file_path_.c_str(), flags.data(), flags.size(), nullptr, 0,
       CXTranslationUnit_DetailedPreprocessingRecord |  // make headers readable
           CXTranslationUnit_Incomplete | CXTranslationUnit_KeepGoing |
           CXTranslationUnit_CreatePreambleOnFirstParse |
@@ -129,7 +129,7 @@ void PluginParser::UpdateAstWithOtherFlags() {
 }
 
 void PluginParser::Reparse() {
-  std::ifstream file(file_name_, std::fstream::in);
+  std::ifstream file(file_path_, std::fstream::in);
   string line;
   file_content_.clear();
   while (std::getline(file, line)) {
@@ -143,15 +143,14 @@ void PluginParser::Reparse() {
   GenerateCodeBlocksFromAst(ast, &code_blocks_);
 }
 
-PluginParser::PluginParser(string file_name, std::vector<string> flags)
+PluginParser::PluginParser(fs::path file, std::vector<string> flags)
     : generated_file_content_(""),
       flags_(flags),
-      file_name_(file_name),
+      file_path_(file),
       code_gen_number_(0) {
   // create empty file
-  std::ofstream file(file_name_, std::fstream::out | std::fstream::trunc);
-  file << "\n";
-  file.close();
+  std::ofstream f(file_path_, std::fstream::out | std::fstream::trunc);
+  f << "\n";
   Parse();
 }
 
@@ -161,7 +160,7 @@ PluginParser::~PluginParser() {
   clang_disposeIndex(i);
 }
 
-string PluginParser::get_file_name() { return file_name_; }
+fs::path PluginParser::get_file() { return file_path_; }
 std::vector<string> PluginParser::get_flags() { return flags_; }
 void PluginParser::set_flags(std::vector<string> f) {
   flags_ = f;

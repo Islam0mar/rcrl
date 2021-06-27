@@ -2,12 +2,15 @@
 
 #include <clang-c/Index.h>
 
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <tuple>
 #include <vector>
+
+namespace fs = std::filesystem;
 
 namespace rcrl {
 using std::string;
@@ -23,23 +26,16 @@ struct CodeBlock {
   CXCursor cursor;  // for any additional info.
 };
 
-inline string GetBaseNameFromSourceName(string str) {
-  return str.substr(0, str.find('.'));
-}
-inline string GetHeaderNameFromSourceName(string str) {
-  return str.substr(0, str.find('.')) + ".hpp";
-}
-
 class PluginParser {
  public:
-  PluginParser(string file_name,
+  PluginParser(fs::path file,
                std::vector<string> command_line_args = std::vector<string>(0));
   ~PluginParser();
   void Reparse();
   void GenerateSourceFile(string file_name, string prepend_str = "",
                           string append_str = "");
   void GenerateHeaderFile(string file_name);
-  string get_file_name();
+  fs::path get_file();
   std::vector<string> get_flags();
   // runs UpdateAstWithOtherFlags internally
   void set_flags(std::vector<string> new_flags);
@@ -60,7 +56,7 @@ class PluginParser {
   std::vector<string> flags_;
   std::vector<std::tuple<Point, Point, string>> name_space_end_;
   std::tuple<CXIndex, CXTranslationUnit> ast_;
-  const string file_name_;
+  const fs::path file_path_;
   unsigned int code_gen_number_;
 };
 

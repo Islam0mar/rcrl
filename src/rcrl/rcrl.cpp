@@ -1,8 +1,7 @@
+#include <cstdio>
 #ifdef _MSC_VER
 #define _CRT_SECURE_NO_WARNINGS
 #endif
-
-#include "rcrl.h"
 
 #include <algorithm>
 #include <cassert>
@@ -16,6 +15,7 @@
 #include <vector>
 
 #include "config.h"
+#include "rcrl.h"
 #include "rcrl_parser.h"
 
 #ifdef _WIN32
@@ -25,32 +25,36 @@
 typedef HMODULE RCRL_Dynlib;
 #define RDRL_LoadDynlib(lib) LoadLibrary(lib)
 #define RCRL_CloseDynlib FreeLibrary
-#define RCRL_CopyDynlib(src, dst) CopyFile(src, dst, false)
-#define RCRL_System_Delete "del /Q "
-
 #else
 
 #include <dlfcn.h>
 typedef void* RCRL_Dynlib;
-#define RDRL_LoadDynlib(lib) \
-  dlopen(lib, RTLD_DEEPBIND | RTLD_LAZY | RTLD_GLOBAL)
+#define RDRL_LoadDynlib(lib) dlopen(lib, RTLD_LAZY | RTLD_GLOBAL)
 #define RCRL_CloseDynlib dlclose
-#define RCRL_CopyDynlib(src, dst) \
-  (!system((string("cp ") + src + " " + dst).c_str()))
-#define RCRL_System_Delete "rm "
-
 #endif
 
 namespace bp = boost::process;
 using std::cerr;
-using std::cout;
 using std::endl;
 using std::string;
 
 namespace rcrl {
-Plugin::Plugin(string file_base_name, std::vector<string> flags)
-    : is_compiling_(false), parser_(file_base_name + ".cpp", flags) {
-  auto header = GetHeaderNameFromSourceName(parser_.get_file_name());
+
+auto CopyFileToString(const string& f_name) {
+  FILE* f = fopen(f_name.c_str(), "rb");
+  fseek(f, 0, SEEK_END);
+  long fsize = ftell(f);
+  fseek(f, 0, SEEK_SET);
+
+  string out;
+  out.resize(fsize);
+  fread((void*)out.data(), fsize, 1, f);
+  fclose(f);
+  return out;
+}
+Plugin::Plugin(fs::path file, std::vector<string> flags)
+    : is_compiling_(false), parser_(file.string() + ".cpp", flags) {
+  auto header = parser_.get_file().replace_extension(".hpp");
   std::ofstream f(header, std::fstream::trunc | std::fstream::out);
   f << "#pragma once\n";
   f.close();
@@ -77,8 +81,13 @@ string Plugin::get_new_compiler_output() {
 string Plugin::CleanupPlugins(bool redirect_stdout) {
   assert(!IsCompiling());
 
-  if (redirect_stdout)
-    freopen(RCRL_BUILD_FOLDER "/rcrl_stdout.txt", "w", stdout);
+  int fd;
+  fpos_t pos;
+  if (redirect_stdout) {
+    fgetpos(stdout, &pos);
+    fd = dup(fileno(stdout));
+    freopen(kRcrlOutputFile.c_str(), "w", stdout);
+  }
 
   // close the plugins_ in reverse order
   for (auto it = plugins_.rbegin(); it != plugins_.rend(); ++it)
@@ -87,10 +96,13 @@ string Plugin::CleanupPlugins(bool redirect_stdout) {
   string out;
 
   if (redirect_stdout) {
-    fclose(stdout);
-    freopen("CON", "w", stdout);
+    fflush(stdout);
+    dup2(fd, fileno(stdout));
+    close(fd);
+    clearerr(stdout);
+    fsetpos(stdout, &pos);
 
-    FILE* f = fopen(RCRL_BUILD_FOLDER "/rcrl_stdout.txt", "rb");
+    FILE* f = fopen(kRcrlOutputFile.c_str(), "rb");
     fseek(f, 0, SEEK_END);
     long fsize = ftell(f);
     fseek(f, 0, SEEK_SET);
@@ -100,20 +112,14 @@ string Plugin::CleanupPlugins(bool redirect_stdout) {
     fclose(f);
   }
 
-  string bin_folder(RCRL_BIN_FOLDER);
-#ifdef _WIN32
-  // replace forward slash with windows style slash
-  replace(bin_folder.begin(), bin_folder.end(), '/', '\\');
-#endif  // _WIN32
+  for (const auto& [name, _] : plugins_) {
+    std::remove(name.c_str());
+  }
 
-  if (plugins_.size())
-    system((string(RCRL_System_Delete) + bin_folder +
-            RCRL_PLUGIN_NAME "_*" RCRL_EXTENSION)
-               .c_str());
   plugins_.clear();
 
   // reset header file
-  auto header = GetHeaderNameFromSourceName(parser_.get_file_name());
+  auto header = parser_.get_file().replace_extension(".hpp");
   std::ofstream f(header, std::fstream::trunc | std::fstream::out);
   f << "#pragma once\n";
 
@@ -128,10 +134,10 @@ bool Plugin::CompileCode(string code) {
   replace(code.begin(), code.end(), '\r', '\n');
 
   // figure out the sections
-  std::fstream file(parser_.get_file_name(),
+  std::fstream file(parser_.get_file(),
                     std::fstream::in | std::fstream::out | std::fstream::trunc);
   // add header to correctly parse the input
-  auto header = GetHeaderNameFromSourceName(parser_.get_file_name());
+  auto header = parser_.get_file().stem().string() + ".hpp";
   file << "#include \"" + header + "\"\n" << code;
   file.close();
   // mark the successful compilation flag as false
@@ -143,7 +149,7 @@ bool Plugin::CompileCode(string code) {
   compiler_process_ = std::async(std::launch::async, [&]() {
     // reparsing takes some time so moved inside async
     parser_.Reparse();
-    parser_.GenerateSourceFile(parser_.get_file_name());
+    parser_.GenerateSourceFile(parser_.get_file());
     boost::asio::io_service ios;
     bp::async_pipe ap(ios);
     auto output_buffer = boost::asio::buffer(buf);
@@ -152,9 +158,12 @@ bool Plugin::CompileCode(string code) {
     for (auto flag : parser_.get_flags()) {
       cmd += flag + string(" ");
     }
-    cmd += "-shared -fvisibility=hidden -fPIC " + parser_.get_file_name() +
-           " -o " + GetBaseNameFromSourceName((parser_.get_file_name())) +
-           ".so";
+    cmd +=
+        "-shared -Wl,-undefined,error -Wl,-flat_namespace -fvisibility=hidden "
+        "-fPIC " +
+        parser_.get_file().string() + " -o " +
+        std::string(kRcrlOutputDir /
+                    (parser_.get_file().stem().string() + ".so"));
     bp::child c(cmd, (bp::std_err & bp::std_out) > ap, bp::std_in.close());
     auto OnStdout = [&](const boost::system::error_code& ec, std::size_t size) {
       auto lambda_impl = [&](const boost::system::error_code& ec, std::size_t n,
@@ -190,7 +199,7 @@ bool Plugin::TryGetExitStatusFromCompile(int& exit_code) {
                             std::to_string(exit_code) + ", aka " +
                             strsignal(exit_code) + "\n");
     if (last_compile_successful_) {
-      auto header = GetHeaderNameFromSourceName(parser_.get_file_name());
+      auto header = parser_.get_file().replace_extension(".hpp");
       parser_.GenerateHeaderFile(header);
     }
     return true;
@@ -206,15 +215,22 @@ string Plugin::CopyAndLoadNewPlugin(bool redirect_stdout) {
               // row without compiling anything in between
 
   // copy the plugin
-  auto name_copied = string(RCRL_BIN_FOLDER) + RCRL_PLUGIN_NAME "_" +
-                     std::to_string(plugins_.size()) + RCRL_EXTENSION;
-  const auto copy_res = RCRL_CopyDynlib(
-      (string(RCRL_BIN_FOLDER) + RCRL_PLUGIN_NAME RCRL_EXTENSION).c_str(),
-      name_copied.c_str());
-  assert(copy_res);
-  if (redirect_stdout)
-    freopen(RCRL_BUILD_FOLDER "/rcrl_stdout.txt", "w", stdout);
+  const auto name_copied =
+      kRcrlOutputDir / (std::string(RCRL_PLUGIN_NAME) + "_" +
+                        std::to_string(plugins_.size()) + RCRL_EXTENSION);
+  std::error_code copy_res;
+  fs::copy(kRcrlOutputDir / (std::string(RCRL_PLUGIN_NAME) + RCRL_EXTENSION),
+           name_copied, fs::copy_options::overwrite_existing, copy_res);
+  assert(copy_res.value() == 0);
+  int fd;
+  fpos_t pos;
 
+  if (redirect_stdout) {
+    // Save position of current standard output
+    fgetpos(stdout, &pos);
+    fd = dup(fileno(stdout));
+    freopen(kRcrlOutputFile.c_str(), "w", stdout);
+  }
   // load the plugin
   auto plugin = RDRL_LoadDynlib(name_copied.c_str());
   if (!plugin) {
@@ -229,10 +245,16 @@ string Plugin::CopyAndLoadNewPlugin(bool redirect_stdout) {
   string out;
 
   if (redirect_stdout) {
-    fclose(stdout);
-    freopen("CON", "w", stdout);
+    // Flush stdout so any buffered messages are delivered
+    fflush(stdout);
+    // Close file and restore standard output to stdout - which should be the
+    // terminal
+    dup2(fd, fileno(stdout));
+    close(fd);
+    clearerr(stdout);
+    fsetpos(stdout, &pos);
 
-    FILE* f = fopen(RCRL_BUILD_FOLDER "/rcrl_stdout.txt", "rb");
+    FILE* f = fopen(kRcrlOutputFile.c_str(), "rb");
     fseek(f, 0, SEEK_END);
     long fsize = ftell(f);
     fseek(f, 0, SEEK_SET);
