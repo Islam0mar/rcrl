@@ -57,10 +57,7 @@ else()
 endif()
 
 # defines needed for RCRL integration
-target_compile_definitions(host_app PRIVATE "RCRL_PLUGIN_FILE=\"${plugin_file}\"")
 target_compile_definitions(host_app PRIVATE "RCRL_PLUGIN_NAME=\"plugin\"")
-target_compile_definitions(host_app PRIVATE "RCRL_BUILD_FOLDER=\"${PROJECT_BINARY_DIR}\"")
-target_compile_definitions(host_app PRIVATE "RCRL_BIN_FOLDER=\"$<TARGET_FILE_DIR:host_app>/\"")
 target_compile_definitions(host_app PRIVATE "RCRL_EXTENSION=\"${CMAKE_SHARED_LIBRARY_SUFFIX}\"")
 if(${CMAKE_GENERATOR} MATCHES "Visual Studio" OR ${CMAKE_GENERATOR} MATCHES "Xcode")
     target_compile_definitions(host_app PRIVATE "RCRL_CONFIG=\"$<CONFIG>\"")
@@ -113,7 +110,7 @@ target_link_libraries(host_app PRIVATE imgui ImGuiColorTextEdit
 # tests
 ####################################################################################################
 
-option(RCRL_WITH_TESTS "Build tests for RCRL" ON)
+option(RCRL_WITH_TESTS "Build tests for RCRL" OFF)
 if(RCRL_WITH_TESTS)
     enable_testing()
 	add_subdirectory(tests)
